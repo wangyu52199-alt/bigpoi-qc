@@ -1,0 +1,4 @@
+interface:
+  display_name: "Big POI QC Auditor"
+  short_description: "Review evidence and decisions from Big POI verification"
+  default_prompt: "Review upstream Big POI verification results and evidence for correctness; output QC decision and rationale."
