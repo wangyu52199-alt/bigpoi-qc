@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bigpoi-qc-audit/output-schema.json",
+  "title": "Big POI QC Audit Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "qc_decision",
+    "qc_summary",
+    "poi_category",
+    "claim_checks",
+    "issues",
+    "missing_evidence",
+    "matched_failure_patterns",
+    "confidence",
+    "recommended_action",
+    "recommended_action_note"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bigpoi_qc_audit_output/v1"
+    },
+    "qc_decision": {
+      "enum": [
+        "pass",
+        "fail",
+        "manual"
+      ]
+    },
+    "qc_summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "poi_category": {
+      "enum": [
+        "government",
+        "airport",
+        "railway_station",
+        "scenic_5a",
+        "other"
+      ]
+    },
+    "claim_checks": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "$ref": "#/$defs/claimCheck"
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/issue"
+      }
+    },
+    "missing_evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/missingEvidence"
+      }
+    },
+    "matched_failure_patterns": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "FP01",
+          "FP02",
+          "FP03",
+          "FP04",
+          "FP05",
+          "FP06",
+          "FP07",
+          "FP08",
+          "FP09",
+          "FP10",
+          "FP11",
+          "FP12",
+          "FP13",
+          "FP14",
+          "FP15"
+        ]
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "recommended_action": {
+      "enum": [
+        "accept_upstream_result",
+        "send_back_for_reverification",
+        "request_more_evidence",
+        "send_to_human_review"
+      ]
+    },
+    "recommended_action_note": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "allOf": [
+    {
+      "properties": {
+        "claim_checks": {
+          "contains": {
+            "type": "object",
+            "required": [
+              "claim"
+            ],
+            "properties": {
+              "claim": {
+                "const": "name"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "claim_checks": {
+          "contains": {
+            "type": "object",
+            "required": [
+              "claim"
+            ],
+            "properties": {
+              "claim": {
+                "const": "existence"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "claim_checks": {
+          "contains": {
+            "type": "object",
+            "required": [
+              "claim"
+            ],
+            "properties": {
+              "claim": {
+                "const": "type"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "claim_checks": {
+          "contains": {
+            "type": "object",
+            "required": [
+              "claim"
+            ],
+            "properties": {
+              "claim": {
+                "const": "address"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "claim_checks": {
+          "contains": {
+            "type": "object",
+            "required": [
+              "claim"
+            ],
+            "properties": {
+              "claim": {
+                "const": "coordinates"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "claim": {
+      "type": "string",
+      "enum": [
+        "name",
+        "existence",
+        "type",
+        "address",
+        "coordinates",
+        "other"
+      ]
+    },
+    "claimCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim",
+        "upstream_value",
+        "evidence_ids",
+        "support_level",
+        "notes",
+        "confidence"
+      ],
+      "properties": {
+        "claim": {
+          "$ref": "#/$defs/claim"
+        },
+        "upstream_value": {},
+        "evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^E[0-9]{1,6}$"
+          }
+        },
+        "support_level": {
+          "enum": [
+            "support",
+            "conflict",
+            "insufficient"
+          ]
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "message",
+        "related_claims"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+        },
+        "severity": {
+          "enum": [
+            "critical",
+            "major",
+            "minor"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "related_claims": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        }
+      }
+    },
+    "missingEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim",
+        "required_evidence",
+        "why_missing"
+      ],
+      "properties": {
+        "claim": {
+          "$ref": "#/$defs/claim"
+        },
+        "required_evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "why_missing": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preferred_source_tier": {
+          "enum": [
+            "A1",
+            "A2",
+            "B1",
+            "B2",
+            "C",
+            "D"
+          ]
+        }
+      }
+    }
+  }
+}

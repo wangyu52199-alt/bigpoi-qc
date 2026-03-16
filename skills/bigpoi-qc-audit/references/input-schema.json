@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bigpoi-qc-audit/input-schema.json",
+  "title": "Big POI QC Audit Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "input_poi",
+    "upstream_result",
+    "evidence_bundle"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bigpoi_qc_audit_input/v1"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_poi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "poi_name"
+      ],
+      "properties": {
+        "poi_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "poi_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "coordinates": {
+          "$ref": "#/$defs/coordinates"
+        },
+        "province": {
+          "type": "string",
+          "minLength": 1
+        },
+        "city": {
+          "type": "string",
+          "minLength": 1
+        },
+        "district": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adcode": {
+          "type": "string",
+          "pattern": "^[0-9]{6,12}$"
+        },
+        "source_record_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "other_attributes": {
+          "type": "object"
+        }
+      }
+    },
+    "upstream_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "final_decision",
+        "field_assertions"
+      ],
+      "properties": {
+        "final_decision": {
+          "enum": [
+            "verified",
+            "manual_review_required",
+            "not_verified"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reasoning": {
+          "type": "string",
+          "minLength": 1
+        },
+        "normalized_fields": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "existence": {
+              "enum": [
+                "exists",
+                "not_exists",
+                "unknown"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "address": {
+              "type": "string",
+              "minLength": 1
+            },
+            "coordinates": {
+              "$ref": "#/$defs/coordinates"
+            }
+          }
+        },
+        "field_assertions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/fieldAssertion"
+          }
+        }
+      }
+    },
+    "evidence_bundle": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    }
+  },
+  "$defs": {
+    "coordinates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "longitude",
+        "latitude"
+      ],
+      "properties": {
+        "longitude": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "latitude": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        }
+      }
+    },
+    "claim": {
+      "type": "string",
+      "enum": [
+        "name",
+        "existence",
+        "type",
+        "address",
+        "coordinates",
+        "other"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}([T ][0-9]{2}:[0-9]{2}(:[0-9]{2})?(Z|[+-][0-9]{2}:[0-9]{2})?)?$"
+    },
+    "fieldAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "assertion_status",
+        "upstream_value"
+      ],
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/claim"
+        },
+        "assertion_status": {
+          "enum": [
+            "confirmed",
+            "rejected",
+            "uncertain"
+          ]
+        },
+        "upstream_value": {},
+        "evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^E[0-9]{1,6}$"
+          }
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "source_type",
+        "source_name",
+        "source_locator",
+        "captured_at",
+        "content"
+      ],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "pattern": "^E[0-9]{1,6}$"
+        },
+        "source_type": {
+          "enum": [
+            "official_website",
+            "official_notice",
+            "official_directory",
+            "official_map",
+            "authority_platform",
+            "news_media",
+            "map_platform",
+            "commercial_platform",
+            "ugc",
+            "other"
+          ]
+        },
+        "source_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "published_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "captured_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1
+        },
+        "supports_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "source_tier": {
+          "enum": [
+            "A1",
+            "A2",
+            "B1",
+            "B2",
+            "C",
+            "D"
+          ]
+        },
+        "reliability_note": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

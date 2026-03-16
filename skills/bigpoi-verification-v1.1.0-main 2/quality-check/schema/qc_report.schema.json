@@ -1,0 +1,395 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ft-git.sf-express.com/ft-scaffold/ai-skills/schemas/qc_report.schema.json",
+  "title": "POI核实结果质检报告模式",
+  "description": "定义大POI核实结果包的结构化质检报告格式",
+  "type": "object",
+  "required": [
+    "qc_report_id",
+    "task_id",
+    "poi_id",
+    "verification_run_id",
+    "checked_at",
+    "workspace_root",
+    "source_bundle",
+    "overall",
+    "checks",
+    "metrics"
+  ],
+  "properties": {
+    "qc_report_id": {
+      "type": "string",
+      "description": "质检报告唯一标识"
+    },
+    "task_id": {
+      "type": "string",
+      "description": "任务ID"
+    },
+    "poi_id": {
+      "type": "string",
+      "description": "POI业务ID"
+    },
+    "verification_run_id": {
+      "type": "string",
+      "description": "被质检结果包所属 run_id"
+    },
+    "checked_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "质检执行时间"
+    },
+    "workspace_root": {
+      "type": "string",
+      "description": "工作区根目录绝对路径"
+    },
+    "source_bundle": {
+      "type": "object",
+      "required": [
+        "index_path",
+        "task_dir",
+        "decision_path",
+        "evidence_path",
+        "record_path"
+      ],
+      "properties": {
+        "index_path": {
+          "type": "string"
+        },
+        "task_dir": {
+          "type": "string"
+        },
+        "decision_path": {
+          "type": "string"
+        },
+        "evidence_path": {
+          "type": "string"
+        },
+        "record_path": {
+          "type": "string"
+        },
+        "input_path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "overall": {
+      "type": "object",
+      "required": [
+        "status",
+        "score",
+        "summary",
+        "recommended_action"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "manual_review",
+            "fail"
+          ]
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "summary": {
+          "type": "string"
+        },
+        "recommended_action": {
+          "type": "string",
+          "enum": [
+            "release",
+            "manual_review",
+            "return_to_verification"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "bundle_integrity",
+        "cross_file_consistency",
+        "evidence_support",
+        "correction_consistency"
+      ],
+      "properties": {
+        "bundle_integrity": {
+          "$ref": "#/definitions/check_result"
+        },
+        "cross_file_consistency": {
+          "$ref": "#/definitions/check_result"
+        },
+        "evidence_support": {
+          "$ref": "#/definitions/check_result"
+        },
+        "correction_consistency": {
+          "$ref": "#/definitions/check_result"
+        },
+        "input_traceability": {
+          "$ref": "#/definitions/check_result"
+        }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "check_count",
+        "evidence_count",
+        "valid_evidence_count",
+        "change_count",
+        "correction_count",
+        "critical_issue_count",
+        "major_issue_count",
+        "minor_issue_count",
+        "source_distribution",
+        "name_support_count",
+        "address_support_count",
+        "coordinate_support_count"
+      ],
+      "properties": {
+        "check_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "valid_evidence_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "change_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "correction_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "critical_issue_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "major_issue_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minor_issue_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_distribution": {
+          "type": "object",
+          "required": [
+            "official",
+            "map_vendor",
+            "internet",
+            "user_contributed",
+            "other"
+          ],
+          "properties": {
+            "official": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "map_vendor": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "internet": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "user_contributed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "other": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "name_support_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "address_support_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coordinate_support_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "definitions": {
+    "check_result": {
+      "type": "object",
+      "required": [
+        "status",
+        "score",
+        "summary",
+        "issue_count",
+        "issues"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "warning",
+            "fail"
+          ]
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "summary": {
+          "type": "string"
+        },
+        "issue_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/issue"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "issue": {
+      "type": "object",
+      "required": [
+        "severity",
+        "code",
+        "message",
+        "file_role"
+      ],
+      "properties": {
+        "severity": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "major",
+            "minor"
+          ]
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "file_role": {
+          "type": "string"
+        },
+        "field_path": {
+          "type": "string"
+        },
+        "suggestion": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "qc_report_id": "QC_20260316T022233Z_A1B2C3D4",
+      "task_id": "TASK_POI_001",
+      "poi_id": "POI_001",
+      "verification_run_id": "TASK_POI_001-POI_001-20260316T022100Z-ABCDEF12",
+      "checked_at": "2026-03-16T02:22:33Z",
+      "workspace_root": "/workspace/project",
+      "source_bundle": {
+        "index_path": "/workspace/project/output/results/TASK_POI_001/index_20260316T022200Z.json",
+        "task_dir": "/workspace/project/output/results/TASK_POI_001",
+        "decision_path": "/workspace/project/output/results/TASK_POI_001/decision_20260316T022200Z.json",
+        "evidence_path": "/workspace/project/output/results/TASK_POI_001/evidence_20260316T022200Z.json",
+        "record_path": "/workspace/project/output/results/TASK_POI_001/record_20260316T022200Z.json"
+      },
+      "overall": {
+        "status": "manual_review",
+        "score": 0.875,
+        "summary": "质检完成，存在提示项，建议人工复核后再放行。",
+        "recommended_action": "manual_review"
+      },
+      "checks": {
+        "bundle_integrity": {
+          "status": "pass",
+          "score": 1.0,
+          "summary": "结果包结构校验通过。",
+          "issue_count": 0,
+          "issues": []
+        },
+        "cross_file_consistency": {
+          "status": "pass",
+          "score": 1.0,
+          "summary": "跨文件字段一致。",
+          "issue_count": 0,
+          "issues": []
+        },
+        "evidence_support": {
+          "status": "warning",
+          "score": 0.75,
+          "summary": "证据支撑存在提示项。",
+          "issue_count": 1,
+          "issues": [
+            {
+              "severity": "minor",
+              "code": "missing_dimension_refs",
+              "message": "关键维度缺少 evidence_refs，证据追溯性偏弱。",
+              "file_role": "decision",
+              "field_path": "dimensions"
+            }
+          ]
+        },
+        "correction_consistency": {
+          "status": "pass",
+          "score": 1.0,
+          "summary": "修正闭环一致。",
+          "issue_count": 0,
+          "issues": []
+        }
+      },
+      "metrics": {
+        "check_count": 4,
+        "evidence_count": 3,
+        "valid_evidence_count": 3,
+        "change_count": 1,
+        "correction_count": 1,
+        "critical_issue_count": 0,
+        "major_issue_count": 0,
+        "minor_issue_count": 1,
+        "source_distribution": {
+          "official": 1,
+          "map_vendor": 2,
+          "internet": 0,
+          "user_contributed": 0,
+          "other": 0
+        },
+        "name_support_count": 2,
+        "address_support_count": 1,
+        "coordinate_support_count": 2
+      }
+    }
+  ]
+}
