@@ -13,6 +13,8 @@
 import json
 import os
 import re
+import sys
+import importlib.util
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -25,6 +27,8 @@ class FileLoader:
 
     def __init__(self):
         self.logger = None
+        self._result_validator = None
+        self._result_contract = None
 
     @staticmethod
     def _is_workspace_root(path: Path) -> bool:
@@ -103,6 +107,75 @@ class FileLoader:
         ]
         return preferred or candidates
 
+    def _find_qc_skill_dir(self) -> Path:
+        root_dir = self._find_root_dir()
+        candidates = [
+            root_dir / 'BigPoi-verification-qc',
+            Path(__file__).resolve().parent.parent.parent / 'BigPoi-verification-qc',
+        ]
+        for candidate in candidates:
+            if candidate.is_dir():
+                return candidate
+        raise FileNotFoundError('未找到 BigPoi-verification-qc 目录，无法校验候选结果')
+
+    def _load_module(self, cache_attr: str, module_name: str, module_path: Path):
+        cached = getattr(self, cache_attr, None)
+        if cached is not None:
+            return cached
+
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f'无法加载模块：{module_path}')
+
+        module = importlib.util.module_from_spec(spec)
+        if str(module_path.parent) not in sys.path:
+            sys.path.insert(0, str(module_path.parent))
+        spec.loader.exec_module(module)
+        setattr(self, cache_attr, module)
+        return module
+
+    def _get_result_contract(self):
+        qc_skill_dir = self._find_qc_skill_dir()
+        return self._load_module(
+            '_result_contract',
+            'bigpoi_qc_result_contract_file_loader',
+            qc_skill_dir / 'scripts' / 'result_contract.py',
+        )
+
+    def _get_result_validator(self):
+        if self._result_validator is not None:
+            return self._result_validator
+
+        qc_skill_dir = self._find_qc_skill_dir()
+        validator_module = self._load_module(
+            '_result_validator_module',
+            'bigpoi_qc_result_validator_file_loader',
+            qc_skill_dir / 'scripts' / 'result_validator.py',
+        )
+        validator_cls = getattr(validator_module, 'ResultValidator', None)
+        if validator_cls is None:
+            raise ImportError('结果校验器模块缺少 ResultValidator')
+
+        self._result_validator = validator_cls(
+            schema_path=str(qc_skill_dir / 'schema' / 'qc_result.schema.json'),
+            scoring_policy_path=str(qc_skill_dir / 'config' / 'scoring_policy.json'),
+        )
+        return self._result_validator
+
+    def _finalize_and_validate_qc_result(self, data: Dict[str, Any], source_path: Path, task_id: str) -> Dict[str, Any]:
+        normalized = self._normalize_qc_result(data, source_path, task_id)
+        qc_skill_dir = self._find_qc_skill_dir()
+        contract_module = self._get_result_contract()
+        finalized = contract_module.finalize_qc_result(
+            normalized,
+            scoring_policy_path=str(qc_skill_dir / 'config' / 'scoring_policy.json'),
+        )
+        validation = self._get_result_validator().validate(finalized)
+        if not validation.get('is_valid'):
+            validation_errors = '; '.join(validation.get('errors', [])[:3]) or 'unknown'
+            raise ValueError(f'结果未通过回库前校验：{validation_errors}')
+        return finalized
+
     def load_result(
         self,
         task_id: str,
@@ -134,7 +207,7 @@ class FileLoader:
             raise FileNotFoundError(f'结果文件不存在：{file_path}')
 
         payload = self._read_json(file_path)
-        return self._normalize_qc_result(payload, file_path, task_id)
+        return self._finalize_and_validate_qc_result(payload, file_path, task_id)
 
     def _resolve_result_file_path(self, result_file: str) -> Path:
         """解析 result_file 路径：支持相对路径，优先当前目录，其次项目根目录。"""
@@ -355,18 +428,8 @@ class FileLoader:
         index_files = self._collect_index_files(task_dir, task_id)
         for index_file in index_files:
             try:
-                index_data = self._read_json(index_file)
-                chosen = self._select_latest_record(index_data.get('results', []), task_id)
-                if not chosen:
-                    continue
-                complete_file = (chosen.get('result_files') or {}).get('complete')
-                if not complete_file:
-                    continue
-                complete_path = self._resolve_complete_path(complete_file, index_file.parent)
-                if complete_path.parent.name != task_id:
-                    continue
-                self._normalize_qc_result(self._read_json(complete_path), complete_path, task_id)
-                return complete_path
+                candidate = self._build_index_candidate(index_file, task_id)
+                return candidate['complete_path']
             except Exception:
                 continue
 
@@ -420,7 +483,7 @@ class FileLoader:
             raise ValueError(f'complete 文件名不符合规范：{complete_path.name}')
 
         payload = self._read_json(complete_path)
-        self._normalize_qc_result(payload, complete_path, task_id)
+        self._finalize_and_validate_qc_result(payload, complete_path, task_id)
 
         return {
             'source_type': 'complete',
@@ -449,7 +512,7 @@ class FileLoader:
 
         complete_path = self._resolve_complete_path(complete_file, index_path.parent)
         payload = self._read_json(complete_path)
-        self._normalize_qc_result(payload, complete_path, task_id)
+        self._finalize_and_validate_qc_result(payload, complete_path, task_id)
 
         timestamp = (
             self._parse_timestamp(chosen.get('timestamp'))

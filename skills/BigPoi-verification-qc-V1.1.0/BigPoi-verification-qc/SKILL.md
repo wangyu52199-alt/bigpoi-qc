@@ -1,6 +1,6 @@
 ---
 name: bigpoi-verification-qc
-version: 2.2.6
+version: 2.2.8
 description:
   对上游大POI核实结果进行确定性质量检验，兼容 legacy 平铺输入与标准输入，重点检查名称、坐标、地址、行政区划、类型、存在性、证据充分性，以及人工核实降级是否一致。
   输出结构化、可审计、可复算的质检结果。
@@ -17,7 +17,7 @@ metadata:
   validators_path: ./scripts/result_validator.py
 -------------
 
-# QC Skill · Big POI Verification v2.2.6
+# QC Skill · Big POI Verification v2.2.8
 
 ## 1. 技能目标
 
@@ -327,6 +327,7 @@ canonical 输入的核心字段如下：
 - `qc_status`、`qc_score`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags` 必须由 `./scripts/finalize_qc_result.py` 统一生成，不得由模型手工填写最终值
 
 在声明“质检结果已保存”之前，必须已经成功调用 `result_persister.py`，并且返回路径必须来自 persister 的真实输出，不得自行拼接。
+`result_persister.py` 在真正写入任何文件前，必须先执行 `finalize_qc_result.py` 和 `result_validator.py`；校验不通过时禁止落盘。
 
 ### 9.1 本地持久化要求
 
@@ -399,7 +400,7 @@ canonical 输入的核心字段如下：
 - `qc_manual_review_required = 任一核心事实维度 status != pass`，或 `evidence_sufficiency != pass`
 - `is_qualified = qc_status == "qualified"`
 - `is_auto_approvable = qc_status == "qualified"`
-- `is_manual_required = qc_status != "qualified"`
+- `is_manual_required = qc_manual_review_required`
 
 ## 12. 核心原则
 

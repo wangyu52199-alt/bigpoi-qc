@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## [2.2.8] - 2026-03-17
+
+### 修复
+- 调整 `scripts/result_persister.py`，在真正写入 `complete/summary/index` 文件前先执行 `finalize_qc_result.py` 和 `result_validator.py`，无效结果禁止落盘
+
+### 文档
+- 更新 `SKILL.md` 的持久化约束，明确落盘前必须先通过结果校验
+
+## [2.2.7] - 2026-03-17
+
+### 修复
+- 统一 `statistics_flags.is_manual_required` 与 `statistics_flags.qc_manual_review_required` 的语义，两者现在都只表示“QC 是否认为需要人工复核”
+- 修正 `downgrade_consistency` 导致整体 `qc_status = risky` 时 `is_manual_required` 被误置为 `true` 的问题
+
+### 文档
+- 更新 `SKILL.md` 统计标记说明，明确 `is_manual_required = qc_manual_review_required`
+
 ## [2.2.6] - 2026-03-17
 
 ### 新增

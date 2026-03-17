@@ -1,22 +1,22 @@
 ---
 name: qc-write-pg-qc
-description: 从本地化JSON文件读取大POI质检结果，回写到PostgreSQL指定表（v1.2.6 在回库前先收敛派生字段，再校验并写库）
+description: 从本地化JSON文件读取大POI质检结果，回写到PostgreSQL指定表（v1.2.8 在回库前先收敛派生字段，再校验并写库）
 metadata:
-  version: "1.2.6"
+  version: "1.2.8"
   category: "quality-control"
   tags: ["qc", "database", "persistence"]
 ---
 
-# 大POI质检结果回库技能 v1.2.6
+# 大POI质检结果回库技能 v1.2.8
 
 ## 概述
 
 本技能从上游大POI质检技能本地化存储的JSON文件中读取质检结果，批量回写到PostgreSQL数据库的指定质检表，同时更新该表的质检相关字段（质检结论、评分、风险标识、统计标记）和状态为'已质检'。
 
-**v1.2.6 当前特性**：
+**v1.2.8 当前特性**：
 - 支持灵活指定目标表名，可向不同的表写入数据，默认表名为 `poi_qc_zk`
 - 保留索引缺失时的递归恢复能力，但恢复范围收敛到 `task_id` 目录
-- 重试产生多份合法结果时，自动选择时间戳最新的一份
+- 重试产生多份结果时，优先选择“通过主质检校验”的最新结果
 - 只有多个候选在时间戳和文件修改时间上都无法区分先后时，才返回歧义错误
 - 回库字段映射已对齐当前质检结果中的 `downgrade_consistency`
 - 回库前先调用主质检技能的 `result_contract.py` / `finalize_qc_result.py` 收敛派生字段，再执行 `result_validator.py` 校验
@@ -36,6 +36,8 @@ metadata:
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 1.2.8 | 2026-03-17 | `task_id` 搜索时只把能通过主质检结果校验的文件视为合法候选；最新结果无效时，自动回退到较早但合法的结果 |
+| 1.2.7 | 2026-03-17 | 同步主质检技能的统计字段语义：`is_manual_required` 与 `qc_manual_review_required` 统一表示“QC 是否认为需要人工复核” |
 | 1.2.6 | 2026-03-17 | 回库前先统一收敛 `qc_score`、`qc_status`、`risk_dims`、`triggered_rules`、`statistics_flags` 等派生字段，再执行结果校验 |
 | 1.2.5 | 2026-03-17 | 保留 `task_id` 搜索模式；重试产生多份合法结果时按时间戳自动选择最新结果，仅在最新候选无法区分先后时才报歧义 |
 | 1.2.4 | 2026-03-17 | 恢复搜索时优先使用正式工作区输出目录中的结果文件；仅当全部候选都位于技能安装目录下时，才回退到 `.claude/skills` 下的结果 |
@@ -103,7 +105,7 @@ SKILL.execute({
 1. 优先从 `output/results/{task_id}/results_index.json` 索引文件读取最新质检记录
 2. 若索引文件不存在或损坏，先在标准 `task_id` 目录内选择时间戳最新的合法 `complete.json`
 3. 标准目录仍失败时，自动进入**受约束递归恢复**：只在名为 `{task_id}` 的目录中搜索索引文件和 `complete.json`
-4. 每个恢复候选都必须通过 `task_id` 一致性和 JSON 结构校验
+4. 每个恢复候选都必须通过 `task_id` 一致性、派生字段收敛和主质检结果校验
 5. 如果只找到 1 个合法候选，就读取并返回完整的质检结果
 6. 如果同时存在正式工作区候选和技能安装目录候选，优先使用正式工作区候选
 7. 若仍存在多个合法候选，则按文件名时间戳优先选择最新结果；若时间戳相同，再用文件修改时间辅助判定
@@ -117,7 +119,7 @@ SKILL.execute({
 - ✅ **标准目录失败**：进入受约束递归恢复
 - ✅ **索引损坏**：忽略损坏的索引，继续尝试其他合法候选
 - ✅ **技能安装目录隔离**：当正式工作区结果存在时，自动忽略 `.claude/skills` 下的同 task_id 候选
-- ✅ **重试结果收敛**：同一 `task_id` 存在多份合法结果时，自动选择时间戳最新的一份
+- ✅ **重试结果收敛**：同一 `task_id` 存在多份结果时，优先选择时间戳最新且能通过主质检校验的一份
 - ✅ **派生字段修正**：回库前自动重算 `qc_score`、`qc_status`、`risk_dims`、`triggered_rules`、`statistics_flags`
 - ✅ **结果自校验**：回库前先校验 `qc_result`，不允许将无效质检结果写入数据库
 - ❌ **多个同优先级候选**：时间戳和修改时间都无法区分时，返回歧义错误
@@ -133,7 +135,7 @@ SKILL.execute({
 | `has_risk` | `has_risk` | 布尔转整型：True→1, False→0 |
 | `statistics_flags.is_qualified` | `is_qualified` | 布尔转整型：True→1, False→0 |
 | `statistics_flags.is_auto_approvable` | `is_auto_approvable` | 布尔转整型：True→1, False→0 |
-| `statistics_flags.is_manual_required` | `is_manual_required` | 布尔转整型：True→1, False→0 |
+| `statistics_flags.is_manual_required` | `is_manual_required` | 布尔转整型：True→1, False→0；语义与 `statistics_flags.qc_manual_review_required` 保持一致 |
 | `statistics_flags.downgrade_issue_type` | `downgrade_issue_type` | 直接映射：consistent / missed_downgrade / unnecessary_downgrade |
 | `dimension_results.downgrade_consistency.status` | `downgrade_status` | 直接映射：pass / risk / fail；旧结构 `dimension_results.downgrade.status` 仅作兼容回退 |
 | `dimension_results.downgrade_consistency.is_consistent` | `is_downgrade_consistent` | 布尔转整型：True→1, False→0 |

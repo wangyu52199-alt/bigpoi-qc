@@ -25,6 +25,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from result_contract import finalize_qc_result, load_scoring_policy  # noqa: E402
+from result_validator import ResultValidator  # noqa: E402
 
 
 def _is_workspace_root(path: Path) -> bool:
@@ -104,6 +105,11 @@ class ResultPersister:
             raw_output_dir = Path(output_dir)
         self.output_dir = self._normalize_output_dir(raw_output_dir)
         self.scoring_policy = load_scoring_policy()
+        self.result_validator = ResultValidator(
+            schema_path=str(SCRIPT_DIR.parent / 'schema' / 'qc_result.schema.json'),
+            scoring_policy_path=str(SCRIPT_DIR.parent / 'config' / 'scoring_policy.json'),
+            logger=self.logger,
+        )
 
     def _normalize_output_dir(self, output_dir: Path) -> Path:
         """
@@ -174,6 +180,19 @@ class ResultPersister:
                     'output_dir': None,
                     'files': {},
                     'errors': ['qc_result 缺少 task_id 字段，且未提供 task_id 参数']
+                }
+
+            validation = self.result_validator.validate(qc_result)
+            if not validation.get('is_valid'):
+                return {
+                    'success': False,
+                    'status': 'failed',
+                    'output_dir': None,
+                    'files': {},
+                    'errors': ['质检结果未通过落盘前校验'],
+                    'validation_status': validation.get('status'),
+                    'validation_errors': validation.get('errors', []),
+                    'validation_warnings': validation.get('warnings', []),
                 }
 
             # 2. 创建任务目录

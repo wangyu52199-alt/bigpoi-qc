@@ -390,7 +390,7 @@ def derive_statistics_flags(dimension_results: Dict[str, Any], qc_status: Option
     return {
         'is_qualified': resolved_qc_status == 'qualified',
         'is_auto_approvable': resolved_qc_status == 'qualified',
-        'is_manual_required': resolved_qc_status != 'qualified',
+        'is_manual_required': qc_manual,
         'qc_manual_review_required': qc_manual,
         'upstream_manual_review_required': upstream_manual,
         'downgrade_issue_type': issue_type,

@@ -1,5 +1,5 @@
 {
-  "version": "2.2.6",
+  "version": "2.2.7",
   "cases": [
     {
       "id": "case1",
@@ -511,7 +511,7 @@
         "statistics_flags": {
           "is_qualified": false,
           "is_auto_approvable": false,
-          "is_manual_required": true,
+          "is_manual_required": false,
           "qc_manual_review_required": false,
           "upstream_manual_review_required": true,
           "downgrade_issue_type": "unnecessary_downgrade"
