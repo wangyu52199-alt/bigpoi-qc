@@ -1,8 +1,8 @@
 ---
 name: bigpoi-verification-qc
-version: 2.2.4
+version: 2.2.6
 description:
-  对上游大POI核实结果进行确定性质量检验，兼容 legacy 平铺输入与标准输入，重点检查名称、坐标、地址、行政区划、类型、存在性，以及人工核实降级是否一致。
+  对上游大POI核实结果进行确定性质量检验，兼容 legacy 平铺输入与标准输入，重点检查名称、坐标、地址、行政区划、类型、存在性、证据充分性，以及人工核实降级是否一致。
   输出结构化、可审计、可复算的质检结果。
 metadata:
   rules_path: ./rules/decision_tables.json
@@ -10,18 +10,20 @@ metadata:
   legacy_schema_path: ./schema/qc_legacy_flat_input.schema.json
   config_path: ./config
   normalizers_path: ./scripts/normalize_legacy_input.py
+  contracts_path: ./scripts/result_contract.py
+  finalizers_path: ./scripts/finalize_qc_result.py
   persisters_path: ./scripts/result_persister.py
   dsl_validators_path: ./scripts/dsl_validator.py
   validators_path: ./scripts/result_validator.py
 -------------
 
-# QC Skill · Big POI Verification v2.2.4
+# QC Skill · Big POI Verification v2.2.6
 
 ## 1. 技能目标
 
 你是一个针对上游核实型数字员工结果的质检技能。
 
-你只评估以下 7 个质检点，不得新增或删减：
+你只评估以下 8 个质检点，不得新增或删减：
 
 1. `existence`：存在性
 2. `name`：名称
@@ -29,7 +31,8 @@ metadata:
 4. `address`：地址文本
 5. `administrative`：行政区划
 6. `category`：类型
-7. `downgrade_consistency`：人工核实降级是否一致
+7. `evidence_sufficiency`：证据是否足以支撑自动通过
+8. `downgrade_consistency`：人工核实降级是否一致
 
 你不负责重新做 POI 核实，不引入外部信息，不做开放式推断。
 
@@ -46,9 +49,11 @@ metadata:
 5. `./schema/decision_tables.schema.json`
 6. `./rules/decision_tables.json`
 7. `./config/scoring_policy.json`
-8. `./scripts/result_validator.py`
-9. `./scripts/dsl_validator.py`
-10. `./scripts/result_persister.py`
+8. `./scripts/result_contract.py`
+9. `./scripts/finalize_qc_result.py`
+10. `./scripts/result_validator.py`
+11. `./scripts/dsl_validator.py`
+12. `./scripts/result_persister.py`
 
 仅作辅助参考：
 
@@ -178,20 +183,22 @@ canonical 输入的核心字段如下：
 1. 判断输入形态是 canonical 还是 legacy flat
 2. 调用 `./scripts/normalize_legacy_input.py` 执行输入归一化、`source_type` 规范化与证据预处理
 3. 仅对预处理后的 canonical 输入执行完整性检查
-4. 判定 6 个核心维度：`existence`、`name`、`location`、`address`、`administrative`、`category`
-5. 基于 6 个核心维度推导 `qc_manual_review_required`
-6. 对比上游人工核实决策，判定 `downgrade_consistency`
-7. 按评分策略计算 `qc_score`
-8. 聚合 `qc_status`、`risk_dims`、`statistics_flags`
-9. 对最终 `qc_result` 调用 `./scripts/result_validator.py`
-10. 只有在校验通过后，才允许调用 `./scripts/result_persister.py`
+4. 判定 6 个事实维度：`existence`、`name`、`location`、`address`、`administrative`、`category`
+5. 基于事实维度证据和来源质量，判定 `evidence_sufficiency`
+6. 基于事实维度和 `evidence_sufficiency` 推导 `qc_manual_review_required`
+7. 对比上游人工核实决策，判定 `downgrade_consistency`
+8. 模型只输出维度级结果：`task_id`、`dimension_results`、`explanation` 及各维度证据，不得手工计算派生字段
+9. 调用 `./scripts/finalize_qc_result.py` 统一组装 `qc_status`、`qc_score`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags`
+10. 对组装后的最终 `qc_result` 调用 `./scripts/result_validator.py`
+11. 只有在校验通过后，才允许调用 `./scripts/result_persister.py`
 
 严格禁止：
 
 - 创建任何临时 Python 脚本，例如 `run_qc.py`、`temp_qc_processor.py`
 - 手写 legacy 输入到 canonical 输入的临时映射逻辑
 - 手写结果文件路径或文件名
-- 跳过 `normalize_legacy_input.py`、`result_validator.py`、`result_persister.py`
+- 手工计算或手工拼装 `qc_score`、`qc_status`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags`
+- 跳过 `normalize_legacy_input.py`、`finalize_qc_result.py`、`result_validator.py`、`result_persister.py`
 
 ## 6. 判定原则
 
@@ -270,7 +277,17 @@ canonical 输入的核心字段如下：
 - 只有单条但置信度不足的强支持证据、或只能达到中等匹配 -> `risk`
 - 多条强支持证据共同支持当前类型，或单条高置信度强支持证据已足以稳定支撑 -> `pass`
 
-### 7.7 `downgrade_consistency`
+### 7.7 `evidence_sufficiency`
+
+`evidence_sufficiency` 不判断事实是否匹配，只判断当前证据是否足以支撑自动通过。
+
+- 当名称、坐标、地址、行政区划、类型、存在性等事实维度已经匹配时，本维度继续判断“支撑是否足够”
+- 至少两条有效支持证据共同支撑最终结论，或单条高权威高置信度证据已足以支撑自动通过 -> `pass`
+- 事实维度虽然匹配，但当前只有一条普通有效支持证据，支撑不足以直接自动通过 -> `risk`
+- 完全没有可用于支撑最终结论的有效支持证据 -> `fail`
+- 本维度的 `risk/fail` 表示“自动通过门槛不足”，不得反向污染事实维度
+
+### 7.8 `downgrade_consistency`
 
 本维度不再单独判断“是否应该降级”为一个独立得分点，而是直接比较：
 
@@ -302,11 +319,12 @@ canonical 输入的核心字段如下：
 
 强制要求：
 
-- 所有 7 个维度都必须存在
+- 所有 8 个维度都必须存在
 - 所有维度都必须输出 `evidence` 数组
 - `risk_dims` 必须与实际 `risk/fail` 维度完全一致
 - `qc_score` 必须可由 `config/scoring_policy.json` 反算
-- `triggered_rules.rule_id` 只能使用 `rules/rules.yaml` 中定义的 `R1-R7`
+- `triggered_rules.rule_id` 只能使用 `rules/rules.yaml` 中定义的 `R1-R8`
+- `qc_status`、`qc_score`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags` 必须由 `./scripts/finalize_qc_result.py` 统一生成，不得由模型手工填写最终值
 
 在声明“质检结果已保存”之前，必须已经成功调用 `result_persister.py`，并且返回路径必须来自 persister 的真实输出，不得自行拼接。
 
@@ -346,7 +364,9 @@ canonical 输入的核心字段如下：
 
 ## 10. 结果聚合规则
 
-核心维度集合：
+以下聚合规则必须由 `./scripts/result_contract.py` / `./scripts/finalize_qc_result.py` 统一实现，模型只能提供维度级输入，不得手工改写最终聚合结果。
+
+核心事实维度集合：
 
 - `existence`
 - `name`
@@ -358,10 +378,12 @@ canonical 输入的核心字段如下：
 整体状态：
 
 - 任一核心维度为 `fail` -> `qc_status = "unqualified"`
-- 否则，只要任一维度为 `risk`，或 `downgrade_consistency = fail` -> `qc_status = "risky"`
+- 否则，只要任一核心事实维度为 `risk`，或 `evidence_sufficiency` / `downgrade_consistency` 为 `risk` 或 `fail` -> `qc_status = "risky"`
 - 否则 -> `qc_status = "qualified"`
 
 ## 11. 统计标记
+
+`statistics_flags` 必须由 `./scripts/result_contract.py` 统一推导，不得由模型手工修改。
 
 输出中的 `statistics_flags` 必须至少包含：
 
@@ -374,7 +396,7 @@ canonical 输入的核心字段如下：
 
 其中：
 
-- `qc_manual_review_required = 任一核心维度 status != pass`
+- `qc_manual_review_required = 任一核心事实维度 status != pass`，或 `evidence_sufficiency != pass`
 - `is_qualified = qc_status == "qualified"`
 - `is_auto_approvable = qc_status == "qualified"`
 - `is_manual_required = qc_status != "qualified"`

@@ -9,7 +9,7 @@
     "properties": {
       "rule_id": {
         "type": "string",
-        "enum": ["R1", "R2", "R3", "R4", "R5", "R6", "R7"]
+        "enum": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]
       },
       "rule_name": {
         "type": "string"
@@ -20,7 +20,7 @@
       },
       "dimension": {
         "type": "string",
-        "enum": ["existence", "name", "location", "address", "administrative", "category", "downgrade_consistency"]
+        "enum": ["existence", "name", "location", "address", "administrative", "category", "evidence_sufficiency", "downgrade_consistency"]
       }
     },
     "additionalProperties": false

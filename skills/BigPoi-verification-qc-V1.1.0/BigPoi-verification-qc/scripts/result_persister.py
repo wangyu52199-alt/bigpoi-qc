@@ -15,9 +15,16 @@
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional, List
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from result_contract import finalize_qc_result, load_scoring_policy  # noqa: E402
 
 
 def _is_workspace_root(path: Path) -> bool:
@@ -96,6 +103,7 @@ class ResultPersister:
         else:
             raw_output_dir = Path(output_dir)
         self.output_dir = self._normalize_output_dir(raw_output_dir)
+        self.scoring_policy = load_scoring_policy()
 
     def _normalize_output_dir(self, output_dir: Path) -> Path:
         """
@@ -154,6 +162,8 @@ class ResultPersister:
         files_created = {}
 
         try:
+            qc_result = finalize_qc_result(qc_result, scoring_policy=self.scoring_policy)
+
             # 1. 获取task_id
             if not task_id:
                 task_id = qc_result.get('task_id')

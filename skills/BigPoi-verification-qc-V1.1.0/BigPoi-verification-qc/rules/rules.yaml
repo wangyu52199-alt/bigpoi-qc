@@ -43,3 +43,9 @@ rules:
     dimension: downgrade_consistency
     severity: medium
     description: 对比 QC 的人工核实需求与上游人工核实决策是否一致
+
+  - id: R8
+    name: 证据充分性检查
+    dimension: evidence_sufficiency
+    severity: medium
+    description: 基于支持最终结论的有效证据数量、来源权威性和置信度判断结果是否足以自动通过

@@ -14,6 +14,7 @@
 import json
 import logging
 import re
+import sys
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple, Any
 
@@ -25,17 +26,23 @@ except ImportError:  # pragma: no cover - optional dependency
     Draft7Validator = None
     RefResolver = None
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
-CORE_DIMENSIONS = (
-    'existence',
-    'name',
-    'location',
-    'address',
-    'administrative',
-    'category',
+from result_contract import (  # noqa: E402
+    ALL_DIMENSIONS,
+    CORE_DIMENSIONS,
+    RULE_METADATA,
+    calculate_qc_score,
+    derive_qc_manual_review_required,
+    derive_qc_status,
+    derive_risk_dims,
+    derive_statistics_flags,
+    derive_triggered_rules,
 )
-ALL_DIMENSIONS = CORE_DIMENSIONS + ('downgrade_consistency',)
-RULE_IDS = {'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7'}
+
+RULE_IDS = set(RULE_METADATA.keys())
 FILE_PATTERN = re.compile(
     r'^(?P<timestamp>\d{8}_\d{6})_(?P<task_id>.+)\.(?P<file_type>complete|summary|results_index)\.json$'
 )
@@ -354,22 +361,14 @@ class ResultValidator:
         has_core_risk = any(
             dimension_results.get(dim, {}).get('status') == 'risk' for dim in CORE_DIMENSIONS
         )
-        consistency_status = dimension_results.get('downgrade_consistency', {}).get('status')
-
-        expected_status = 'qualified'
-        if has_core_fail:
-            expected_status = 'unqualified'
-        elif has_core_risk or consistency_status in ['risk', 'fail']:
-            expected_status = 'risky'
+        expected_status = derive_qc_status(dimension_results)
 
         if qc_result.get('qc_status') != expected_status:
             errors.append(
                 f"qc_status 与维度状态不一致，预期 {expected_status}，实际 {qc_result.get('qc_status')}"
             )
 
-        actual_risk_dims = sorted(
-            [dim for dim in ALL_DIMENSIONS if dimension_results.get(dim, {}).get('status') in ['risk', 'fail']]
-        )
+        actual_risk_dims = sorted(derive_risk_dims(dimension_results))
         listed_risk_dims = sorted(qc_result.get('risk_dims', []))
         if actual_risk_dims != listed_risk_dims:
             errors.append(
@@ -388,6 +387,38 @@ class ResultValidator:
                 f"qc_score 与评分策略不一致。预期 {expected_score}，实际 {qc_result.get('qc_score')}"
             )
 
+        expected_triggered_rules = derive_triggered_rules(dimension_results)
+        actual_triggered_rules = qc_result.get('triggered_rules', [])
+        actual_rule_signatures = sorted(
+            (
+                rule.get('rule_id'),
+                rule.get('rule_name'),
+                rule.get('dimension'),
+            )
+            for rule in actual_triggered_rules
+            if isinstance(rule, dict)
+        )
+        expected_rule_signatures = sorted(
+            (
+                rule.get('rule_id'),
+                rule.get('rule_name'),
+                rule.get('dimension'),
+            )
+            for rule in expected_triggered_rules
+        )
+        if actual_rule_signatures != expected_rule_signatures:
+            errors.append(
+                f"triggered_rules 与维度状态不一致。预期：{expected_triggered_rules}，实际：{actual_triggered_rules}"
+            )
+
+        expected_qc_manual = derive_qc_manual_review_required(dimension_results)
+        actual_qc_manual = dimension_results.get('downgrade_consistency', {}).get('qc_manual_review_required')
+        if actual_qc_manual != expected_qc_manual:
+            errors.append(
+                f"downgrade_consistency.qc_manual_review_required 与核心维度状态不一致。"
+                f"预期 {expected_qc_manual}，实际 {actual_qc_manual}"
+            )
+
         errors.extend(self._validate_statistics_flags(qc_result, expected_status, has_core_fail, has_core_risk))
         return errors
 
@@ -403,19 +434,7 @@ class ResultValidator:
         if not isinstance(flags, dict):
             return ['statistics_flags 必须是对象']
 
-        consistency_result = qc_result.get('dimension_results', {}).get('downgrade_consistency', {})
-        qc_manual = has_core_fail or has_core_risk
-        upstream_manual = consistency_result.get('upstream_manual_review_required')
-        issue_type = consistency_result.get('issue_type')
-
-        expected_flags = {
-            'is_qualified': expected_status == 'qualified',
-            'is_auto_approvable': expected_status == 'qualified',
-            'is_manual_required': expected_status != 'qualified',
-            'qc_manual_review_required': qc_manual,
-            'upstream_manual_review_required': upstream_manual,
-            'downgrade_issue_type': issue_type,
-        }
+        expected_flags = derive_statistics_flags(qc_result.get('dimension_results', {}), expected_status)
 
         for key, expected_value in expected_flags.items():
             if flags.get(key) != expected_value:
@@ -426,33 +445,7 @@ class ResultValidator:
         return errors
 
     def _calculate_expected_score(self, dimension_results: Dict[str, Dict[str, Any]]) -> int:
-        if not self.scoring_policy:
-            return 0
-
-        weights = self.scoring_policy.get('dimension_weights', {})
-        factors = self.scoring_policy.get('status_factors', {})
-        pass_factor = factors.get('pass', 1.0)
-        risk_factors = factors.get('risk', {})
-        fail_factor = factors.get('fail', 0.0)
-
-        total = 0.0
-        for dim_name, weight in weights.items():
-            result = dimension_results.get(dim_name, {})
-            status = result.get('status')
-            risk_level = result.get('risk_level')
-
-            if status == 'pass':
-                factor = pass_factor
-            elif status == 'risk':
-                factor = risk_factors.get(risk_level, 0.0)
-            elif status == 'fail':
-                factor = fail_factor
-            else:
-                factor = 0.0
-
-            total += float(weight) * float(factor)
-
-        return int(round(total))
+        return calculate_qc_score(dimension_results, self.scoring_policy)
 
     def _validate_files(self, result_dir: str, task_id: Optional[str]) -> Tuple[List[str], List[str]]:
         errors: List[str] = []

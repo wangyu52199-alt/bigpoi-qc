@@ -27,7 +27,7 @@
     },
     "dimension_results": {
       "type": "object",
-      "required": ["existence", "name", "location", "address", "administrative", "category", "downgrade_consistency"],
+      "required": ["existence", "name", "location", "address", "administrative", "category", "evidence_sufficiency", "downgrade_consistency"],
       "properties": {
         "existence": {
           "type": "string",
@@ -50,6 +50,10 @@
           "enum": ["pass", "risk", "fail"]
         },
         "category": {
+          "type": "string",
+          "enum": ["pass", "risk", "fail"]
+        },
+        "evidence_sufficiency": {
           "type": "string",
           "enum": ["pass", "risk", "fail"]
         },

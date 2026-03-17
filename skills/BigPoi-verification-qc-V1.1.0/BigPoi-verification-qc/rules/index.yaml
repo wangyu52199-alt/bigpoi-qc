@@ -28,3 +28,7 @@ rules:
     name: 人工核实一致性检查
     category: downgrade_consistency
     file: decision_tables.json
+  - id: R8
+    name: 证据充分性检查
+    category: evidence_sufficiency
+    file: decision_tables.json

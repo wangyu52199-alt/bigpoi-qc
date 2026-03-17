@@ -24,7 +24,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["existence", "name", "location", "address", "administrative", "category", "downgrade_consistency"]
+        "enum": ["existence", "name", "location", "address", "administrative", "category", "evidence_sufficiency", "downgrade_consistency"]
       }
     },
     "triggered_rules": {
@@ -32,7 +32,7 @@
     },
     "dimension_results": {
       "type": "object",
-      "required": ["existence", "name", "location", "address", "administrative", "category", "downgrade_consistency"],
+      "required": ["existence", "name", "location", "address", "administrative", "category", "evidence_sufficiency", "downgrade_consistency"],
       "properties": {
         "existence": {
           "$ref": "#/definitions/core_dimension_result"
@@ -50,6 +50,9 @@
           "$ref": "#/definitions/core_dimension_result"
         },
         "category": {
+          "$ref": "#/definitions/core_dimension_result"
+        },
+        "evidence_sufficiency": {
           "$ref": "#/definitions/core_dimension_result"
         },
         "downgrade_consistency": {
@@ -127,7 +130,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["R1", "R2", "R3", "R4", "R5", "R6", "R7"]
+            "enum": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]
           }
         },
         "confidence": {

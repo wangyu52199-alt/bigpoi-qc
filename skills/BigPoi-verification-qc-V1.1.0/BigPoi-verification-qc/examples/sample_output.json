@@ -282,15 +282,58 @@
         }
       ]
     },
+    "evidence_sufficiency": {
+      "status": "pass",
+      "risk_level": "none",
+      "explanation": "证据充分性通过：至少两条有效支持证据共同支撑最终结论，可支撑自动通过。",
+      "related_rules": [
+        "R8"
+      ],
+      "confidence": 0.935,
+      "evidence": [
+        {
+          "evidence_id": "EVID001",
+          "source": {
+            "source_id": "SOURCE001",
+            "source_name": "高德地图",
+            "source_type": "地图数据"
+          },
+          "data": {
+            "existence": true
+          },
+          "verification": {
+            "is_valid": true,
+            "confidence": 0.95
+          }
+        },
+        {
+          "evidence_id": "EVID002",
+          "source": {
+            "source_id": "SOURCE002",
+            "source_name": "百度地图",
+            "source_type": "地图数据"
+          },
+          "data": {
+            "existence": true
+          },
+          "verification": {
+            "is_valid": true,
+            "confidence": 0.92
+          }
+        }
+      ]
+    },
     "downgrade_consistency": {
       "status": "pass",
       "risk_level": "none",
-      "explanation": "核心维度均通过，QC 与上游都不需要人工核实，判断一致。",
+      "explanation": "降级一致性通过：QC 与上游对是否需要人工核实的判断一致。",
       "is_consistent": true,
       "issue_type": "consistent",
       "qc_manual_review_required": false,
       "upstream_manual_review_required": false,
-      "related_rules": [],
+      "related_rules": [
+        "R7"
+      ],
       "confidence": 1.0,
       "evidence": [
         {
@@ -300,7 +343,7 @@
       ]
     }
   },
-  "explanation": "六个核心维度均通过，且人工核实一致性正常。",
+  "explanation": "六个事实维度与证据充分性均通过，且人工核实一致性正常。",
   "statistics_flags": {
     "is_qualified": true,
     "is_auto_approvable": true,

@@ -26,12 +26,14 @@ DIMENSION_RULE_MAP = {
     'administrative': 'R5',
     'category': 'R6',
     'downgrade_consistency': 'R7',
+    'evidence_sufficiency': 'R8',
 }
 EXPECTED_WORKFLOW = [
     'integrity_check',
     'normalize_record_and_evidence',
     'compute_dimension_metrics',
     'evaluate_dimension_outcomes',
+    'evaluate_evidence_sufficiency',
     'derive_manual_review_flags',
     'evaluate_downgrade_consistency',
     'calculate_score',

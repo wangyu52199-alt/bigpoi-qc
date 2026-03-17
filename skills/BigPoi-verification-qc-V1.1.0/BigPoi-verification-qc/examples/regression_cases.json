@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
+  "version": "2.2.6",
   "cases": [
     {
       "id": "case1",
@@ -262,7 +262,7 @@
       },
       "expected_output": {
         "qc_status": "unqualified",
-        "qc_score": 80,
+        "qc_score": 85,
         "has_risk": true,
         "risk_dims": ["category", "downgrade_consistency"],
         "statistics_flags": {
@@ -366,7 +366,7 @@
       },
       "expected_output": {
         "qc_status": "unqualified",
-        "qc_score": 65,
+        "qc_score": 50,
         "has_risk": true,
         "risk_dims": ["address", "administrative", "downgrade_consistency", "location"],
         "statistics_flags": {
@@ -505,7 +505,7 @@
       },
       "expected_output": {
         "qc_status": "risky",
-        "qc_score": 90,
+        "qc_score": 95,
         "has_risk": true,
         "risk_dims": ["downgrade_consistency"],
         "statistics_flags": {
@@ -515,6 +515,112 @@
           "qc_manual_review_required": false,
           "upstream_manual_review_required": true,
           "downgrade_issue_type": "unnecessary_downgrade"
+        }
+      }
+    },
+    {
+      "id": "case5",
+      "name": "事实维度通过但证据不足导致整体 risky",
+      "input": {
+        "record": {
+          "task_id": "TASK_CASE_005",
+          "poi_id": "POI005",
+          "name": "单证据测试门店",
+          "location": {
+            "longitude": 121.4737,
+            "latitude": 31.2304,
+            "address": "上海市黄浦区南京东路100号"
+          },
+          "category": "便利店",
+          "administrative": {
+            "province": "上海市",
+            "city": "上海市",
+            "district": "黄浦区"
+          },
+          "existence": true
+        },
+        "evidence_data": [
+          {
+            "evidence_id": "EVID001",
+            "source": {
+              "source_id": "SOURCE001",
+              "source_name": "高德地图",
+              "source_type": "地图数据"
+            },
+            "data": {
+              "name": "单证据测试门店",
+              "location": {
+                "longitude": 121.4737,
+                "latitude": 31.2304,
+                "address": "上海市黄浦区南京东路100号"
+              },
+              "category": "便利店",
+              "administrative": {
+                "province": "上海市",
+                "city": "上海市",
+                "district": "黄浦区"
+              },
+              "existence": true
+            },
+            "verification": {
+              "is_valid": true,
+              "confidence": 0.88
+            },
+            "matching": {
+              "name_similarity": 1.0,
+              "location_distance": 0,
+              "category_match": 1.0,
+              "is_match": true
+            }
+          }
+        ],
+        "upstream_decision": {
+          "overall": {
+            "status": "downgraded",
+            "confidence": 0.8,
+            "action": "manual_review"
+          },
+          "dimensions": {
+            "existence": {
+              "result": "pass",
+              "confidence": 0.88
+            },
+            "name": {
+              "result": "pass",
+              "confidence": 1.0
+            },
+            "location": {
+              "result": "pass",
+              "confidence": 0.88
+            },
+            "administrative": {
+              "result": "pass",
+              "confidence": 0.88
+            },
+            "category": {
+              "result": "pass",
+              "confidence": 0.88
+            }
+          },
+          "downgrade_info": {
+            "is_downgraded": true,
+            "reason_code": "INSUFFICIENT_EVIDENCE",
+            "reason_description": "仅有一条支持证据，需人工复核"
+          }
+        }
+      },
+      "expected_output": {
+        "qc_status": "risky",
+        "qc_score": 97,
+        "has_risk": true,
+        "risk_dims": ["evidence_sufficiency"],
+        "statistics_flags": {
+          "is_qualified": false,
+          "is_auto_approvable": false,
+          "is_manual_required": true,
+          "qc_manual_review_required": true,
+          "upstream_manual_review_required": true,
+          "downgrade_issue_type": "consistent"
         }
       }
     }

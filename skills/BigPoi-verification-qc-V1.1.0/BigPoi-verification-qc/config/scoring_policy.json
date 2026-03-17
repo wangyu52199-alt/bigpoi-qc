@@ -8,7 +8,8 @@
     "address": 15,
     "administrative": 10,
     "category": 10,
-    "downgrade_consistency": 10
+    "evidence_sufficiency": 5,
+    "downgrade_consistency": 5
   },
   "status_factors": {
     "pass": 1.0,

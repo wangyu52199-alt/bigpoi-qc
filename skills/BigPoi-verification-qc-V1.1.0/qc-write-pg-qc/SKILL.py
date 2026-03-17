@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-QC Write PG QC v1.2.5 - 质检结果写入到 PostgreSQL poi_qc 表
+QC Write PG QC v1.2.6 - 质检结果写入到 PostgreSQL poi_qc 表
 入口文件：本技能从本地化 JSON 文件读取质检结果，写入数据库
-支持灵活表名配置、索引缺失容错和重试场景下的最新结果恢复
+支持灵活表名配置、索引缺失容错、重试场景下的最新结果恢复，以及回库前的派生字段自动收敛
 """
 
 import json
@@ -32,6 +32,7 @@ if sys.stderr.encoding != 'utf-8':
 
 
 _RESULT_VALIDATOR = None
+_RESULT_CONTRACT = None
 
 
 def _find_qc_skill_dir() -> Path:
@@ -76,6 +77,27 @@ def get_result_validator():
         scoring_policy_path=str(scoring_policy_path),
     )
     return _RESULT_VALIDATOR
+
+
+def get_result_contract():
+    """按需加载主质检技能的结果契约组装逻辑。"""
+    global _RESULT_CONTRACT
+    if _RESULT_CONTRACT is not None:
+        return _RESULT_CONTRACT
+
+    qc_skill_dir = _find_qc_skill_dir()
+    contract_path = qc_skill_dir / 'scripts' / 'result_contract.py'
+    if not contract_path.exists():
+        raise FileNotFoundError(f'结果契约模块不存在：{contract_path}')
+
+    spec = importlib.util.spec_from_file_location('bigpoi_qc_result_contract', contract_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'无法加载结果契约模块：{contract_path}')
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _RESULT_CONTRACT = module
+    return _RESULT_CONTRACT
 
 
 def get_default_output_dir() -> str:
@@ -125,7 +147,15 @@ def execute(params: dict) -> dict:
             result_dir=result_dir
         )
 
-        # 2. 回库前先校验 qc_result，避免无效结果进入数据库
+        # 2. 回库前先收敛可反算字段，避免历史结果或模型手工拼装字段导致误拦截
+        qc_skill_dir = _find_qc_skill_dir()
+        contract_module = get_result_contract()
+        qc_result = contract_module.finalize_qc_result(
+            qc_result,
+            scoring_policy_path=str(qc_skill_dir / 'config' / 'scoring_policy.json'),
+        )
+
+        # 3. 回库前先校验 qc_result，避免无效结果进入数据库
         validation = get_result_validator().validate(qc_result)
         if not validation.get('is_valid'):
             return {
@@ -138,11 +168,11 @@ def execute(params: dict) -> dict:
                 'validation_warnings': validation.get('warnings', []),
             }
 
-        # 3. 数据转换
+        # 4. 数据转换
         converter = DataConverter()
         converted_data = converter.convert(qc_result)
 
-        # 4. 写入数据库
+        # 5. 写入数据库
         table_name = params.get('table_name', 'poi_qc_zk')
         writer = QCWriter()
         writer.connect()
@@ -207,7 +237,7 @@ def execute_batch(params_list: list) -> dict:
 def main():
     """主函数"""
     if len(sys.argv) < 2:
-        print("BigPOI QC Result Writer v1.2.5")
+        print("BigPOI QC Result Writer v1.2.6")
         print("本技能用于将质检结果写入 PostgreSQL poi_qc 表")
         print("\n使用方式：")
         print("  Python调用:")

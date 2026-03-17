@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## [2.2.6] - 2026-03-17
+
+### 新增
+- 新增 `evidence_sufficiency` 维度，用于在 6 个事实维度全部匹配后继续判断“当前证据是否足以支撑自动通过”
+
+### 修复
+- 调整 `scripts/result_contract.py` 的最终聚合逻辑：允许 6 个事实维度全部 `pass`，但因 `evidence_sufficiency = risk/fail` 将整体 `qc_status` 判为 `risky`
+- 调整 `config/scoring_policy.json`，为 `evidence_sufficiency` 和 `downgrade_consistency` 重新分配权重，保持总分固定 100 分
+- 调整 `rules/decision_tables.json`、相关 schema 和规则注册表，补齐 `R8` 与 `evidence_sufficiency` 的 DSL 定义
+- 更新回归样例和示例输出，覆盖“事实维度通过但证据不足导致整体 risky”的场景
+
+### 文档
+- 更新 `SKILL.md`，将质检点扩展为 8 个，并明确 `evidence_sufficiency` 只表达自动通过门槛风险，不反向污染事实维度
+
+## [2.2.5] - 2026-03-17
+
+### 新增
+- 新增 `scripts/result_contract.py`，集中实现 `qc_status`、`qc_score`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags` 的确定性派生逻辑
+- 新增 `scripts/finalize_qc_result.py`，用于在维度级结果基础上组装完整 `qc_result`
+
+### 修复
+- 调整 `scripts/result_validator.py`，复用统一的结果契约计算逻辑，避免“结果组装一套、结果校验一套”导致的漂移
+- 调整 `scripts/result_persister.py`，在落盘前先统一收敛派生字段，减少持久化后回库校验失败
+
+### 文档
+- 更新 `SKILL.md` 执行流程，明确模型只输出维度级结果，派生字段必须由 `finalize_qc_result.py` 生成
+- 更新 `SKILL.md` 权威文件列表和禁止项，禁止模型手工拼装 `qc_score`、`qc_status`、`risk_dims`、`triggered_rules`、`statistics_flags`
+
 ## [2.2.4] - 2026-03-17
 
 ### 修复

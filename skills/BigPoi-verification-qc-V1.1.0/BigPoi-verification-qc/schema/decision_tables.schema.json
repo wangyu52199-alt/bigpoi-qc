@@ -87,7 +87,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "enum": ["existence", "name", "location", "address", "administrative", "category", "downgrade_consistency"]
+                  "enum": ["existence", "name", "location", "address", "administrative", "category", "evidence_sufficiency", "downgrade_consistency"]
                 }
               }
             }
@@ -202,7 +202,7 @@
     },
     "dimensions": {
       "type": "object",
-      "required": ["existence", "name", "location", "address", "administrative", "category", "downgrade_consistency"],
+      "required": ["existence", "name", "location", "address", "administrative", "category", "evidence_sufficiency", "downgrade_consistency"],
       "properties": {
         "existence": {
           "$ref": "#/definitions/dimension"
@@ -220,6 +220,9 @@
           "$ref": "#/definitions/dimension"
         },
         "category": {
+          "$ref": "#/definitions/dimension"
+        },
+        "evidence_sufficiency": {
           "$ref": "#/definitions/dimension"
         },
         "downgrade_consistency": {
