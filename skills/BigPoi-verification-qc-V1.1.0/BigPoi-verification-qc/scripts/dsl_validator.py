@@ -45,7 +45,7 @@ EXPECTED_DERIVED_FIELDS = {
     'upstream_manual_review_signal_source',
     'upstream_manual_review_required',
 }
-COMPARISON_OPS = {'eq', 'ne', 'lt', 'lte', 'gt', 'gte', 'in', 'not_in', 'between', 'exists'}
+COMPARISON_OPS = {'eq', 'ne', 'lt', 'lte', 'gt', 'gte', 'in', 'not_in', 'between', 'exists', 'contains'}
 STATUS_RANK = {'fail': 0, 'risk': 1, 'pass': 2}
 
 

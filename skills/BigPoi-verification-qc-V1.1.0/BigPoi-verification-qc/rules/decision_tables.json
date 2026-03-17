@@ -1,5 +1,5 @@
 {
-  "version": "2.3.2",
+  "version": "2.3.4",
   "dsl_version": "1.0.0",
   "authoritative": true,
   "execution_model": "deterministic_rule_dsl",
@@ -787,6 +787,38 @@
                   "ref": "evidence.data.name"
                 },
                 "op": "exists"
+              }
+            ]
+          }
+        },
+        {
+          "name": "weak_address_city_support_count",
+          "function": "count",
+          "selector": "evidence_record[]",
+          "where": {
+            "all": [
+              {
+                "left": {
+                  "ref": "evidence.verification.is_valid"
+                },
+                "op": "eq",
+                "right": true
+              },
+              {
+                "left": {
+                  "ref": "evidence.source.source_type"
+                },
+                "op": "in",
+                "right": ["business_license", "official_registry", "government", "official_data"]
+              },
+              {
+                "left": {
+                  "ref": "evidence.data.address"
+                },
+                "op": "contains",
+                "right": {
+                  "ref": "city"
+                }
               }
             ]
           }
@@ -1787,11 +1819,22 @@
           "issue_code": "no_valid_administrative_evidence",
           "trigger_rule": "R5",
           "when": {
-            "left": {
-              "ref": "metric.valid_admin_evidence_count"
-            },
-            "op": "eq",
-            "right": 0
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.valid_admin_evidence_count"
+                },
+                "op": "eq",
+                "right": 0
+              },
+              {
+                "left": {
+                  "ref": "metric.weak_address_city_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
           "explanation_template": "行政区划失败：没有有效 city 证据。",
           "evidence_policy": {
@@ -1835,6 +1878,61 @@
           }
         },
         {
+          "id": "administrative_risk_weak_address_only",
+          "status": "risk",
+          "risk_level": "low",
+          "issue_code": "weak_address_city_support_only",
+          "trigger_rule": "R5",
+          "when": {
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.valid_admin_evidence_count"
+                },
+                "op": "eq",
+                "right": 0
+              },
+              {
+                "left": {
+                  "ref": "metric.weak_address_city_support_count"
+                },
+                "op": "gte",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.hard_conflict_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
+          },
+          "explanation_template": "行政区划风险：缺少结构化 city 证据，但官方或权威来源地址中包含输入 city，可作为弱支持。地址只作为补充弱支持，不参与行政区划冲突判定。",
+          "evidence_policy": {
+            "mode": "filter",
+            "selector": "evidence_record[]",
+            "where": {
+              "any": [
+                {
+                  "left": {
+                    "ref": "evidence.data.administrative.city"
+                  },
+                  "op": "exists"
+                },
+                {
+                  "left": {
+                    "ref": "evidence.data.address"
+                  },
+                  "op": "exists"
+                }
+              ]
+            },
+            "min_items": 1,
+            "max_items": 5
+          }
+        },
+        {
           "id": "administrative_risk_single_exact_support",
           "status": "risk",
           "risk_level": "medium",
@@ -1862,6 +1960,13 @@
                 },
                 "op": "eq",
                 "right": 0
+              },
+              {
+                "left": {
+                  "ref": "metric.weak_address_city_support_count"
+                },
+                "op": "eq",
+                "right": 0
               }
             ]
           },
@@ -1874,6 +1979,61 @@
                 "ref": "evidence.data.administrative.city"
               },
               "op": "exists"
+            },
+            "min_items": 1,
+            "max_items": 5
+          }
+        },
+        {
+          "id": "administrative_pass_single_exact_plus_weak_address",
+          "status": "pass",
+          "risk_level": "none",
+          "issue_code": "administrative_supported_with_weak_address",
+          "trigger_rule": "R5",
+          "when": {
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.hard_conflict_count"
+                },
+                "op": "eq",
+                "right": 0
+              },
+              {
+                "left": {
+                  "ref": "metric.exact_support_count"
+                },
+                "op": "gte",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.weak_address_city_support_count"
+                },
+                "op": "gte",
+                "right": 1
+              }
+            ]
+          },
+          "explanation_template": "行政区划通过：已有结构化 city 一致证据，且官方或权威来源地址中也包含输入 city。地址在本维度仅作为补充弱支持，不参与冲突判定。",
+          "evidence_policy": {
+            "mode": "filter",
+            "selector": "evidence_record[]",
+            "where": {
+              "any": [
+                {
+                  "left": {
+                    "ref": "evidence.data.administrative.city"
+                  },
+                  "op": "exists"
+                },
+                {
+                  "left": {
+                    "ref": "evidence.data.address"
+                  },
+                  "op": "exists"
+                }
+              ]
             },
             "min_items": 1,
             "max_items": 5
@@ -1914,7 +2074,7 @@
               }
             ]
           },
-          "explanation_template": "行政区划通过：city 字段与证据一致。本维度只比较输入 city 与证据 city，不比较地址、省份或区县。",
+          "explanation_template": "行政区划通过：city 字段与证据一致。本维度主判定只比较输入 city 与证据 city；地址最多只能作为补充弱支持，不比较省份或区县。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_record[]",

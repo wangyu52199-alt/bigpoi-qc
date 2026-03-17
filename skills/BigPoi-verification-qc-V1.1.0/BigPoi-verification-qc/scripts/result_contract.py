@@ -73,6 +73,21 @@ RULE_METADATA = {
 DEFAULT_RULE_BY_DIMENSION = {
     meta['dimension']: rule_id for rule_id, meta in RULE_METADATA.items()
 }
+DIMENSION_LABELS = {
+    'existence': '存在性',
+    'name': '名称',
+    'location': '坐标',
+    'address': '地址',
+    'administrative': '行政区划',
+    'category': '类型',
+    'evidence_sufficiency': '证据充分性',
+    'downgrade_consistency': '降级一致性',
+}
+QC_STATUS_LABELS = {
+    'qualified': '通过',
+    'risky': '有风险',
+    'unqualified': '不通过',
+}
 
 
 def load_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -139,6 +154,194 @@ def _evidence_source_type(evidence: Dict[str, Any]) -> str:
     if not isinstance(source, dict):
         return ''
     return str(source.get('source_type') or '').strip()
+
+
+def _copy_present(mapping: Dict[str, Any], keys: List[str]) -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    for key in keys:
+        value = mapping.get(key)
+        if value is not None:
+            result[key] = copy.deepcopy(value)
+    return result
+
+
+def _first_non_empty(*values: Any) -> Any:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return None
+
+
+def _extract_typecode(data: Dict[str, Any]) -> Optional[Any]:
+    raw_data = data.get('raw_data')
+    if not isinstance(raw_data, dict):
+        return None
+    nested_raw = raw_data.get('data')
+    if isinstance(nested_raw, dict) and nested_raw.get('typecode') is not None:
+        return nested_raw.get('typecode')
+    return raw_data.get('typecode')
+
+
+def _build_location_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    location_payload: Dict[str, Any] = {}
+    coordinates = data.get('coordinates')
+    if isinstance(coordinates, dict):
+        longitude = coordinates.get('longitude')
+        latitude = coordinates.get('latitude')
+        if longitude is not None:
+            location_payload['longitude'] = longitude
+        if latitude is not None:
+            location_payload['latitude'] = latitude
+
+    location = data.get('location')
+    if isinstance(location, dict):
+        longitude = _first_non_empty(location_payload.get('longitude'), location.get('longitude'))
+        latitude = _first_non_empty(location_payload.get('latitude'), location.get('latitude'))
+        address = _first_non_empty(location.get('address'), data.get('address'))
+        if longitude is not None:
+            location_payload['longitude'] = longitude
+        if latitude is not None:
+            location_payload['latitude'] = latitude
+        if address is not None:
+            location_payload['address'] = address
+    else:
+        address = data.get('address')
+        if address is not None:
+            location_payload['address'] = address
+
+    return location_payload
+
+
+def _project_evidence_item(dim_name: str, evidence: Dict[str, Any]) -> Dict[str, Any]:
+    projected: Dict[str, Any] = {}
+    if evidence.get('evidence_id') is not None:
+        projected['evidence_id'] = evidence.get('evidence_id')
+    if evidence.get('collected_at') is not None:
+        projected['collected_at'] = evidence.get('collected_at')
+
+    source = evidence.get('source')
+    if isinstance(source, dict):
+        projected_source = _copy_present(source, ['source_id', 'source_name', 'source_type', 'source_url', 'weight'])
+        if projected_source:
+            projected['source'] = projected_source
+
+    verification = evidence.get('verification')
+    if isinstance(verification, dict):
+        projected_verification = _copy_present(verification, ['is_valid', 'confidence', 'validation_errors'])
+        if projected_verification:
+            projected['verification'] = projected_verification
+
+    matching = evidence.get('matching')
+    data = evidence.get('data')
+    if not isinstance(data, dict):
+        data = {}
+
+    if dim_name == 'existence':
+        projected_data = _copy_present(
+            data,
+            ['name', 'address', 'existence'],
+        )
+    elif dim_name == 'name':
+        projected_data = _copy_present(data, ['name'])
+        if isinstance(matching, dict):
+            projected_matching = _copy_present(matching, ['name_similarity'])
+            if projected_matching:
+                projected['matching'] = projected_matching
+    elif dim_name == 'location':
+        location_payload = _build_location_payload(data)
+        projected_data = {'location': location_payload} if location_payload else {}
+        if isinstance(matching, dict):
+            projected_matching = _copy_present(matching, ['location_distance'])
+            if projected_matching:
+                projected['matching'] = projected_matching
+    elif dim_name == 'address':
+        address = _first_non_empty(data.get('address'), data.get('location', {}).get('address') if isinstance(data.get('location'), dict) else None)
+        projected_data = {'address': address} if address is not None else {}
+    elif dim_name == 'administrative':
+        administrative = data.get('administrative')
+        city = None
+        if isinstance(administrative, dict):
+            city = administrative.get('city')
+        projected_data = {'administrative': {'city': city}} if city is not None else {}
+        address = _first_non_empty(
+            data.get('address'),
+            data.get('location', {}).get('address') if isinstance(data.get('location'), dict) else None,
+        )
+        if address is not None:
+            projected_data['address'] = address
+    elif dim_name == 'category':
+        projected_data = {}
+        category = data.get('category')
+        typecode = _extract_typecode(data)
+        if category is not None:
+            projected_data['category'] = category
+        if typecode is not None:
+            projected_data['raw_data'] = {'typecode': typecode}
+    elif dim_name == 'evidence_sufficiency':
+        projected_data = {}
+    else:
+        projected_data = copy.deepcopy(data)
+
+    if projected_data:
+        projected['data'] = projected_data
+
+    return projected
+
+
+def _project_dimension_evidence(dim_name: str, evidence_items: Any) -> List[Dict[str, Any]]:
+    if not isinstance(evidence_items, list):
+        return []
+    projected_items = []
+    for item in evidence_items:
+        if not isinstance(item, dict):
+            continue
+        projected_item = _project_evidence_item(dim_name, item)
+        if projected_item:
+            projected_items.append(projected_item)
+    return _dedupe_evidence_items(projected_items)
+
+
+def _trim_explanation(text: Any) -> str:
+    if not isinstance(text, str):
+        return ''
+    return ' '.join(text.strip().split())
+
+
+def derive_overall_explanation(
+    dimension_results: Dict[str, Any],
+    qc_status: str,
+    qc_score: int,
+) -> str:
+    parts: List[str] = [f"质检结果：{QC_STATUS_LABELS.get(qc_status, qc_status)}，得分 {qc_score} 分。"]
+
+    passed_core = [DIMENSION_LABELS[dim] for dim in CORE_DIMENSIONS if _dimension_status(dimension_results, dim) == 'pass']
+    if passed_core:
+        parts.append(f"通过维度：{'、'.join(passed_core)}。")
+
+    findings: List[str] = []
+    for dim_name in ALL_DIMENSIONS:
+        dim_result = dimension_results.get(dim_name, {})
+        if not isinstance(dim_result, dict):
+            continue
+        status = dim_result.get('status')
+        if status not in RISK_STATUSES:
+            continue
+        explanation = _trim_explanation(dim_result.get('explanation'))
+        label = DIMENSION_LABELS.get(dim_name, dim_name)
+        if explanation:
+            findings.append(f"{label}{'失败' if status == 'fail' else '风险'}：{explanation}")
+        else:
+            findings.append(f"{label}{'失败' if status == 'fail' else '风险'}。")
+
+    if findings:
+        parts.extend(findings)
+    elif len(passed_core) == len(CORE_DIMENSIONS):
+        parts.append("核心事实维度全部通过。")
+
+    return ' '.join(parts)
 
 
 def _collect_supporting_evidence(dimension_results: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -267,6 +470,7 @@ def normalize_dimension_results(dimension_results: Dict[str, Any]) -> Dict[str, 
         if default_rule_id and not related_rules:
             related_rules = [default_rule_id]
         dim_result['related_rules'] = related_rules
+        dim_result['evidence'] = _project_dimension_evidence(dim_name, dim_result.get('evidence'))
 
     consistency = normalized.get('downgrade_consistency')
     if isinstance(consistency, dict):
@@ -413,4 +617,9 @@ def finalize_qc_result(
     finalized['qc_score'] = calculate_qc_score(normalized_dimensions, resolved_scoring_policy)
     finalized['triggered_rules'] = derive_triggered_rules(normalized_dimensions)
     finalized['statistics_flags'] = derive_statistics_flags(normalized_dimensions, finalized['qc_status'])
+    finalized['explanation'] = derive_overall_explanation(
+        normalized_dimensions,
+        finalized['qc_status'],
+        finalized['qc_score'],
+    )
     return finalized

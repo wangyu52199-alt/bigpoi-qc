@@ -1,6 +1,6 @@
 ---
 name: bigpoi-verification-qc
-version: 2.3.2
+version: 2.3.5
 description:
   对上游大POI核实结果进行确定性质量检验，官方输入固定为上游平铺结构。重点检查名称、坐标、地址、行政区划、类型、存在性、证据充分性，以及人工核实降级是否一致。
   输出结构化、可审计、可复算的质检结果。
@@ -8,6 +8,8 @@ metadata:
   rules_path: ./rules/decision_tables.json
   schema_path: ./schema
   config_path: ./config
+  poi_type_mapping_path: ./config/poi_type_mapping.json
+  poi_type_mapping_script: ./scripts/poi_type_mapping.py
   contracts_path: ./scripts/result_contract.py
   finalizers_path: ./scripts/finalize_qc_result.py
   persisters_path: ./scripts/result_persister.py
@@ -15,7 +17,7 @@ metadata:
   validators_path: ./scripts/result_validator.py
 -------------
 
-# QC Skill · Big POI Verification v2.3.2
+# QC Skill · Big POI Verification v2.3.5
 
 ## 1. 技能目标
 
@@ -45,11 +47,13 @@ metadata:
 3. `./schema/decision_tables.schema.json`
 4. `./rules/decision_tables.json`
 5. `./config/scoring_policy.json`
-6. `./scripts/result_contract.py`
-7. `./scripts/finalize_qc_result.py`
-8. `./scripts/result_validator.py`
-9. `./scripts/dsl_validator.py`
-10. `./scripts/result_persister.py`
+6. `./config/poi_type_mapping.json`
+7. `./scripts/poi_type_mapping.py`
+8. `./scripts/result_contract.py`
+9. `./scripts/finalize_qc_result.py`
+10. `./scripts/result_validator.py`
+11. `./scripts/dsl_validator.py`
+12. `./scripts/result_persister.py`
 
 仅作辅助参考：
 
@@ -175,8 +179,8 @@ metadata:
 5. 基于事实维度证据和来源质量，判定 `evidence_sufficiency`
 6. 基于事实维度和 `evidence_sufficiency` 推导 `qc_manual_review_required`
 7. 对比上游人工核实决策，判定 `downgrade_consistency`
-8. 模型只输出维度级结果：`task_id`、`dimension_results`、`explanation` 及各维度证据，不得手工计算派生字段
-9. 调用 `./scripts/finalize_qc_result.py` 统一组装 `qc_status`、`qc_score`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags`
+8. 模型只输出维度级结果：`task_id`、`dimension_results` 及各维度证据，不得手工计算派生字段
+9. 调用 `./scripts/finalize_qc_result.py` 统一组装 `qc_status`、`qc_score`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags` 和顶层 `explanation`
 10. 对组装后的最终 `qc_result` 调用 `./scripts/result_validator.py`
 11. 只有在校验通过后，才允许调用 `./scripts/result_persister.py`
 
@@ -186,6 +190,7 @@ metadata:
 - 创建或依赖任何结构归一化步骤
 - 手写结果文件路径或文件名
 - 手工计算或手工拼装 `qc_score`、`qc_status`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags`
+- 手工编写顶层 `explanation`
 - 跳过 `finalize_qc_result.py`、`result_validator.py`、`result_persister.py`
 
 ## 6. 判定原则
@@ -211,6 +216,17 @@ metadata:
 具体阈值、证据选择、优先级和 explanation 模板，必须以 `decision_tables.json` 的 DSL 为准。
 
 除名称相似度这类专用阈值外，当前“高置信度支持”的默认置信度门槛统一为 `verification.confidence >= 0.85`。
+
+维度级 `evidence` 必须输出为“相关字段快照”，不得重复携带与当前维度无关的原始字段：
+
+- `name` 只保留名称相关字段
+- `location` 只保留坐标和距离相关字段
+- `address` 只保留地址文本相关字段
+- `administrative` 只保留 `city`
+- `category` 只保留 `category` / `typecode`
+- `existence` 只保留可证明存在性的最小字段
+
+完整原始证据只保留在输入 `evidence_record`，不得在各维度结果里整条复制。
 
 ### 7.1 `existence`
 
@@ -261,9 +277,11 @@ metadata:
 
 - 只看 `city`
 - 不得读取地址字段，不得从地址里反推行政区划
+- 例外：官方或权威来源地址中明确包含输入 `city` 时，可作为补充弱支持，但不能单独制造冲突，也不能替代结构化 `city` 成为唯一强证据
 - 无有效 `city` 证据，或证据 `city` 与输入 `city` 直接冲突 -> `fail`
-- 只有单条 `city` 一致证据且置信度不足 -> `risk`
-- 多条 `city` 一致证据，或单条高置信度 `city` 一致证据 -> `pass`
+- 缺少结构化 `city` 证据、但官方或权威来源地址中包含输入 `city` -> `risk`
+- 只有单条 `city` 一致证据且置信度不足，且没有官方/权威地址弱支持 -> `risk`
+- 多条 `city` 一致证据，或单条高置信度 `city` 一致证据，或“单条结构化 `city` 一致证据 + 官方/权威地址弱支持” -> `pass`
 
 ### 7.6 `category`
 
@@ -271,10 +289,12 @@ metadata:
 
 - 优先使用 `evidence.data.raw_data.typecode`
 - 次优先使用 `evidence.data.raw_data.data.typecode`
-- 只有类目中文名、没有 `typecode` 的证据，只能作为弱支撑
+- 如果证据没有 `typecode`，必须读取 `./config/poi_type_mapping.json`，并通过 `./scripts/poi_type_mapping.py` 将输入 `poi_type` 映射到白名单类型，再和证据中文 `category` 做别名匹配
+- 只有类目中文名、没有 `typecode` 的证据，默认只能作为弱支撑；只有映射别名明确命中时，才允许作为有效回退支撑
 - 没有可用 `typecode` 证据 -> `fail`
 - `typecode` 与 `poi_type` 直接冲突 -> `fail`
 - 仅有单条 `typecode` 精确匹配证据但置信度不足 -> `risk`
+- 没有 `typecode`，但中文 `category` 与映射别名命中 -> `risk`
 - 有高置信度 `typecode` 精确匹配，或多条 `typecode` 精确匹配 -> `pass`
 
 ### 7.7 `evidence_sufficiency`
@@ -387,6 +407,13 @@ metadata:
 - 任一核心维度为 `fail` -> `qc_status = "unqualified"`
 - 否则，只要任一核心事实维度为 `risk`，或 `evidence_sufficiency` / `downgrade_consistency` 为 `risk` 或 `fail` -> `qc_status = "risky"`
 - 否则 -> `qc_status = "qualified"`
+
+顶层 `explanation` 必须由程序统一生成，至少包含：
+
+- 最终 `qc_status`
+- 最终 `qc_score`
+- 通过的核心事实维度摘要
+- 所有 `risk` / `fail` 维度的具体原因摘要
 
 ## 11. 统计标记
 

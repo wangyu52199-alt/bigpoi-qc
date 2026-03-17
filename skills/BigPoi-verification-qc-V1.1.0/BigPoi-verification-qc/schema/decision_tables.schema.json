@@ -266,7 +266,7 @@
         },
         "op": {
           "type": "string",
-          "enum": ["eq", "ne", "lt", "lte", "gt", "gte", "in", "not_in", "between", "exists"]
+          "enum": ["eq", "ne", "lt", "lte", "gt", "gte", "in", "not_in", "between", "exists", "contains"]
         },
         "right": {
           "$ref": "#/definitions/value"

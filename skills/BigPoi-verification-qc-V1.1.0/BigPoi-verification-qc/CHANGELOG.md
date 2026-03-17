@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## [2.3.5] - 2026-03-17
+
+### 新增
+- 新增 `config/poi_type_mapping.json`，用于将内部 `poi_type` 映射到白名单类型
+- 新增 `scripts/poi_type_mapping.py`，用于在缺失 `typecode` 时按映射表匹配中文 `category`
+
+### 文档
+- 更新 `SKILL.md` 和 `rules/rules.yaml`，明确 `category` 维度的判定顺序为：`typecode` 优先，缺失时再回退到映射后的中文类目别名
+
+## [2.3.4] - 2026-03-17
+
+### 调整
+- 为 `administrative` 增加“官方或权威来源地址包含输入 city”这一补充弱支持
+- 弱支持只能帮助边界通过判定，不参与行政区划冲突，不会把地址重新变成主判定字段
+- 当存在单条结构化 `city` 一致证据且同时有官方/权威地址弱支持时，允许 `administrative` 直接通过
+
+### 输出
+- 调整 `administrative` 维度证据快照，允许在需要时展示相关地址文本作为弱支持依据
+
+## [2.3.3] - 2026-03-17
+
+### 调整
+- 将各维度 `evidence` 输出收敛为按维度裁剪的证据快照，不再重复输出与当前维度无关的字段
+- 将顶层 `explanation` 改为由 `result_contract.py` 程序统一生成，自动汇总最终状态、得分、通过维度和风险原因
+
+### 文档
+- 更新 `SKILL.md`，明确模型不得手工编写顶层 `explanation`，维度 `evidence` 只允许输出相关字段快照
+
 ## [2.3.2] - 2026-03-17
 
 ### 调整
