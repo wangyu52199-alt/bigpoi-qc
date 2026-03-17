@@ -7,7 +7,7 @@
 1. 先按标准目录定位 `result_dir/{task_id}`。
 2. 标准目录失败后，再做受约束递归恢复。
 3. 递归恢复仅接受 `{task_id}` 目录下的索引文件和 complete 文件。
-4. 如果恢复阶段出现多个合法候选，拒绝自动猜测，直接报歧义。
+4. 恢复阶段若存在多份合法结果，优先选时间戳最新的一份；仅当最新候选无法区分先后时才报歧义。
 """
 
 import json
@@ -279,6 +279,32 @@ class FileLoader:
             mtime = 0
         return (timestamp, mtime)
 
+    def _select_latest_candidate(self, candidates: List[Dict[str, Any]], task_id: str, search_root: Path) -> Path:
+        """
+        在多个候选中选择最新的一份结果。
+
+        优先按文件名时间戳排序，mtime 仅用于同一时间戳下的辅助判定。
+        只有当多个候选在时间戳和 mtime 上都无法区分先后时，才保留歧义报错。
+        """
+        ordered = sorted(candidates, key=self._candidate_sort_key, reverse=True)
+        if len(ordered) == 1:
+            return ordered[0]['complete_path']
+
+        best = ordered[0]
+        second = ordered[1]
+        if self._candidate_sort_key(best) != self._candidate_sort_key(second):
+            return best['complete_path']
+
+        lines = []
+        for candidate in ordered:
+            lines.append(
+                f"- timestamp={candidate['timestamp']} source={candidate['source_path']} complete={candidate['complete_path']}"
+            )
+        raise ValueError(
+            f'检测到多个同优先级合法结果文件候选，无法判定最新结果（task_id={task_id}，搜索根目录={search_root}）：\n'
+            + '\n'.join(lines)
+        )
+
     def _load_complete_from_index(
         self,
         index_data: Dict[str, Any],
@@ -518,15 +544,4 @@ class FileLoader:
                 f'在恢复搜索中未找到合法结果文件（task_id={task_id}，搜索根目录={search_root}）{detail}'
             )
 
-        if len(valid_candidates) > 1:
-            lines = []
-            for candidate in sorted(valid_candidates, key=self._candidate_sort_key, reverse=True):
-                lines.append(
-                    f"- timestamp={candidate['timestamp']} source={candidate['source_path']} complete={candidate['complete_path']}"
-                )
-            raise ValueError(
-                f'检测到多个合法结果文件候选，拒绝自动猜测（task_id={task_id}，搜索根目录={search_root}）：\n'
-                + '\n'.join(lines)
-            )
-
-        return valid_candidates[0]['complete_path']
+        return self._select_latest_candidate(valid_candidates, task_id, search_root)

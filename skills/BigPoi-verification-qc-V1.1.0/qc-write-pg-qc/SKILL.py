@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-QC Write PG QC v1.2.3 - 质检结果写入到 PostgreSQL poi_qc 表
+QC Write PG QC v1.2.5 - 质检结果写入到 PostgreSQL poi_qc 表
 入口文件：本技能从本地化 JSON 文件读取质检结果，写入数据库
-支持灵活表名配置、索引缺失容错和完善的错误恢复机制
+支持灵活表名配置、索引缺失容错和重试场景下的最新结果恢复
 """
 
 import json
@@ -207,7 +207,7 @@ def execute_batch(params_list: list) -> dict:
 def main():
     """主函数"""
     if len(sys.argv) < 2:
-        print("BigPOI QC Result Writer v1.2.3")
+        print("BigPOI QC Result Writer v1.2.5")
         print("本技能用于将质检结果写入 PostgreSQL poi_qc 表")
         print("\n使用方式：")
         print("  Python调用:")
