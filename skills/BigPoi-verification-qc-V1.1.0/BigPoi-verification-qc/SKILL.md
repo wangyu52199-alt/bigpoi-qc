@@ -1,15 +1,13 @@
 ---
 name: bigpoi-verification-qc
-version: 2.2.8
+version: 2.3.2
 description:
-  对上游大POI核实结果进行确定性质量检验，兼容 legacy 平铺输入与标准输入，重点检查名称、坐标、地址、行政区划、类型、存在性、证据充分性，以及人工核实降级是否一致。
+  对上游大POI核实结果进行确定性质量检验，官方输入固定为上游平铺结构。重点检查名称、坐标、地址、行政区划、类型、存在性、证据充分性，以及人工核实降级是否一致。
   输出结构化、可审计、可复算的质检结果。
 metadata:
   rules_path: ./rules/decision_tables.json
   schema_path: ./schema
-  legacy_schema_path: ./schema/qc_legacy_flat_input.schema.json
   config_path: ./config
-  normalizers_path: ./scripts/normalize_legacy_input.py
   contracts_path: ./scripts/result_contract.py
   finalizers_path: ./scripts/finalize_qc_result.py
   persisters_path: ./scripts/result_persister.py
@@ -17,7 +15,7 @@ metadata:
   validators_path: ./scripts/result_validator.py
 -------------
 
-# QC Skill · Big POI Verification v2.2.8
+# QC Skill · Big POI Verification v2.3.2
 
 ## 1. 技能目标
 
@@ -43,17 +41,15 @@ metadata:
 必须优先读取：
 
 1. `./schema/qc_input.schema.json`
-2. `./schema/qc_legacy_flat_input.schema.json`
-3. `./scripts/normalize_legacy_input.py`
-4. `./schema/qc_result.schema.json`
-5. `./schema/decision_tables.schema.json`
-6. `./rules/decision_tables.json`
-7. `./config/scoring_policy.json`
-8. `./scripts/result_contract.py`
-9. `./scripts/finalize_qc_result.py`
-10. `./scripts/result_validator.py`
-11. `./scripts/dsl_validator.py`
-12. `./scripts/result_persister.py`
+2. `./schema/qc_result.schema.json`
+3. `./schema/decision_tables.schema.json`
+4. `./rules/decision_tables.json`
+5. `./config/scoring_policy.json`
+6. `./scripts/result_contract.py`
+7. `./scripts/finalize_qc_result.py`
+8. `./scripts/result_validator.py`
+9. `./scripts/dsl_validator.py`
+10. `./scripts/result_persister.py`
 
 仅作辅助参考：
 
@@ -81,12 +77,9 @@ metadata:
 
 ## 3. 输入约定
 
-外部输入允许两种形式：
+外部输入只允许一种形式：上游平铺输入，必须符合 `schema/qc_input.schema.json`。
 
-1. 标准 canonical 输入：符合 `schema/qc_input.schema.json` 的 canonical 分支
-2. legacy 平铺输入：符合 `schema/qc_legacy_flat_input.schema.json`
-
-legacy 平铺输入的典型字段包括：
+典型字段包括：
 
 - `task_id`
 - `name`
@@ -98,38 +91,32 @@ legacy 平铺输入的典型字段包括：
 - `verify_info`
 - `verify_result`
 
-内部规则执行时，一律只允许消费经过预处理的 canonical 输入。也就是说：
+规则执行时直接读取这些平铺字段，不允许再做结构归一化。允许的预处理只有两类：
 
-- 如果收到 legacy 平铺输入，必须先调用 `./scripts/normalize_legacy_input.py`
-- 如果收到 canonical 输入，也必须先经过 `./scripts/normalize_legacy_input.py` 的预处理逻辑
-- 预处理必须先完成三件事：结构归一化、`source_type` 规范化、无效证据过滤
-- 只有预处理后的 canonical 结构，才允许进入完整性检查和维度判定
+- 过滤无效证据
+- 统一 `source_type` 枚举，且不得改写业务字段含义
 
-canonical 输入的核心字段如下：
+核心业务字段按以下口径直接使用：
 
-- `record.task_id`
-- `record.name`
-- `record.location.longitude`
-- `record.location.latitude`
-- `record.location.address`
-- `record.administrative.province`
-- `record.administrative.city`
-- `record.administrative.district`
-- `record.category`
-- `evidence_data`
-- `upstream_decision`
+- `task_id`
+- `name`
+- `address`
+- `x_coord`
+- `y_coord`
+- `poi_type`
+- `city`
+- `poi_status`
+- `evidence_record`
 
-上游人工核实信号按以下优先级推导：
+上游人工核实信号固定通过平铺输入 `verify_result` 识别：
 
-1. `upstream_decision.downgrade_info.is_downgraded`
-2. `upstream_decision.overall.action == "manual_review"`
-3. `upstream_decision.overall.status in ["manual_review", "downgraded"]`
+- `verify_result = "核实通过"` -> `upstream_manual_review_required = false`
+- `verify_result = "需人工核实"` 或 `verify_result = "需要人工核实"` -> `upstream_manual_review_required = true`
+- 其他值 -> `downgrade_consistency` 记为 `unresolved`
 
 ## 4. 必须执行的完整性检查
 
-在进入任何维度判定前，必须先完成输入归一化和证据预处理，再做完整性检查。
-
-禁止直接对 legacy 平铺输入执行完整性检查。
+在进入任何维度判定前，必须先对平铺输入做证据预处理，再做完整性检查。
 
 证据预处理阶段必须先过滤以下无效证据：
 
@@ -137,7 +124,9 @@ canonical 输入的核心字段如下：
 - 明显是附属点位或出入口的证据，例如 `东门`、`西门`、`南门`、`北门`、`停车场`、`出入口`
 - 对政府类主体而言，明显是关联设施而不是主实体的证据，例如 `政务中心`、`办事大厅`、`便民服务中心`
 
-过滤后的 `evidence_data` 才是完整性检查和后续维度判定的唯一输入。
+过滤后的 `evidence_record` 才是完整性检查和后续维度判定的唯一输入。
+
+在 DSL 中，证据集合 selector 表示的就是过滤后的 `evidence_record[]` 视图，不代表单独的结构归一化步骤。
 
 证据预处理阶段还必须统一 `source.source_type`，至少收敛到以下内部枚举之一：
 
@@ -157,16 +146,15 @@ canonical 输入的核心字段如下：
 
 当以下任一字段缺失、为空或为 null 时，直接判定相关维度为 `fail`：
 
-- `record.task_id`
-- `record.name`
-- `record.location.longitude`
-- `record.location.latitude`
-- `record.location.address`
-- `record.administrative.province`
-- `record.administrative.city`
-- `record.administrative.district`
-- `record.category`
-- `evidence_data` 为空或无有效证据
+- `task_id`
+- `name`
+- `x_coord`
+- `y_coord`
+- `address`
+- `city`
+- `poi_type`
+- `poi_status`
+- `evidence_record` 为空或无有效证据
 
 完整性失败时：
 
@@ -180,9 +168,9 @@ canonical 输入的核心字段如下：
 
 必须严格按以下顺序执行：
 
-1. 判断输入形态是 canonical 还是 legacy flat
-2. 调用 `./scripts/normalize_legacy_input.py` 执行输入归一化、`source_type` 规范化与证据预处理
-3. 仅对预处理后的 canonical 输入执行完整性检查
+1. 直接读取平铺输入字段
+2. 对 `evidence_record` 执行无效证据过滤与 `source_type` 统一
+3. 仅对平铺输入执行完整性检查
 4. 判定 6 个事实维度：`existence`、`name`、`location`、`address`、`administrative`、`category`
 5. 基于事实维度证据和来源质量，判定 `evidence_sufficiency`
 6. 基于事实维度和 `evidence_sufficiency` 推导 `qc_manual_review_required`
@@ -195,10 +183,10 @@ canonical 输入的核心字段如下：
 严格禁止：
 
 - 创建任何临时 Python 脚本，例如 `run_qc.py`、`temp_qc_processor.py`
-- 手写 legacy 输入到 canonical 输入的临时映射逻辑
+- 创建或依赖任何结构归一化步骤
 - 手写结果文件路径或文件名
 - 手工计算或手工拼装 `qc_score`、`qc_status`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags`
-- 跳过 `normalize_legacy_input.py`、`finalize_qc_result.py`、`result_validator.py`、`result_persister.py`
+- 跳过 `finalize_qc_result.py`、`result_validator.py`、`result_persister.py`
 
 ## 6. 判定原则
 
@@ -222,60 +210,72 @@ canonical 输入的核心字段如下：
 
 具体阈值、证据选择、优先级和 explanation 模板，必须以 `decision_tables.json` 的 DSL 为准。
 
+除名称相似度这类专用阈值外，当前“高置信度支持”的默认置信度门槛统一为 `verification.confidence >= 0.85`。
+
 ### 7.1 `existence`
 
-`existence` 只判断 record 中的存在性结论是否被有效证据支持。
+`existence` 只判断这条 POI 是否被有效证据支持为真实存在。
 
-- 只看有效存在性证据数量、支持/冲突证据数量、权威冲突证据和平均置信度
-- 无有效存在性证据、存在权威冲突证据、或整体置信度过低 -> `fail`
-- 只有单条但置信度不足的支持证据、支持与冲突并存、或置信度中等 -> `risk`
-- 多条有效证据稳定支持存在性，或单条高置信度证据已足以稳定支撑 -> `pass`
+- 只看有效存在性证据数量和平均置信度
+- 无有效存在性证据、或平均置信度低于 `0.50` -> `fail`
+- 只有单条有效支持证据且置信度不足，或平均置信度位于 `0.50-0.69` -> `risk`
+- 多条有效证据支持存在性，或单条高置信度证据已足以稳定支撑 -> `pass`
 
 ### 7.2 `name`
 
 `name` 只判断名称是否与证据中的目标实体一致。
 
-- 只看有效名称证据数量、强匹配/中匹配支持数量、硬冲突数量和最佳相似度
-- 无有效名称证据、或全部相似度低于阈值 -> `fail`
-- 只有单条但置信度不足的强支持证据、或只能达到中等相似度 -> `risk`
+- 强支持阈值：`name_similarity >= 0.85`
+- 中等相似度区间：`0.60-0.84`
+- 低于 `0.60` 视为硬冲突
+- 无有效名称证据、或全部相似度低于 `0.60` -> `fail`
+- 只有单条但置信度不足的强支持证据、或只能达到 `0.60-0.84` 的中等相似度 -> `risk`
 - 多条强支持证据稳定指向同一名称，或单条高置信度强支持证据已足以稳定支撑 -> `pass`
 
 ### 7.3 `location`
 
 `location` 只比较坐标，不比较地址文本。
 
-- 只看有效坐标证据数量、经纬度偏离、跨市/跨省边界和权威坐标偏离
-- 无有效坐标证据、跨市/跨省边界冲突、或权威坐标偏离过大 -> `fail`
-- 只有单条但距离或置信度不足的近距离坐标支持、偏离处于中间区间、或存在区县边界冲突 -> `risk`
-- 多条近距离坐标证据共同支持 record 坐标，或单条高置信度近距离坐标证据已足以稳定支撑 -> `pass`
-- 地址文本冲突必须落在 `address`
+- 只看有效坐标证据数量和经纬度偏离，不引入地址字段
+- 无有效坐标证据、或高优先级坐标偏离超过 `500m` -> `fail`
+- 最大偏离在 `201-500m` -> `risk`
+- 最大偏离不超过 `200m` -> `pass`
+- 单证据不足不在本维度打 `risk`，统一交给 `evidence_sufficiency`
 
 ### 7.4 `address`
 
 `address` 单独比较地址文本。
 
-- 只看有效地址证据数量、精确支持、弱支持和直接冲突
-- 无有效地址证据、或街道/门牌/楼栋等发生直接冲突 -> `fail`
-- 只有单条但置信度不足的精确支持、或只有弱匹配/模糊匹配 -> `risk`
-- 多条精确地址证据共同支持 record.address，或单条高置信度精确证据已足以稳定支撑 -> `pass`
+- 只看输入 `address` 与证据 `data.address`
+- 精确支持：道路主干和门牌号都一致；允许省市区前缀省略，不允许改写真实道路或门牌
+- 软匹配：道路一致但门牌缺失、门牌一致但道路别名不同，或出现类似 `人民路 / 人民西路` 的可疑差异
+- 硬冲突：城市级别冲突，或门牌号直接冲突
+- 无有效地址证据、或发生硬冲突 -> `fail`
+- 仅有单条精确支持但置信度不足，或只有软匹配 -> `risk`
+- 多条精确支持，或单条高置信度精确支持 -> `pass`
+- 地址解释必须输出真实冲突点，不允许只写“地址冲突”或“只有一条证据”
 
 ### 7.5 `administrative`
 
-`administrative` 只判断省、市、区三级行政区划是否一致。
+`administrative` 只判断输入 `city` 与证据 `administrative.city` 是否一致。
 
-- 只看有效行政区划证据数量、精确支持、弱支持和直接冲突
-- 无有效行政区划证据、或省市区存在明确直接冲突 -> `fail`
-- 只有单条但置信度不足的精确支持、或只能形成弱支持 -> `risk`
-- 多条精确证据一致支持 record.administrative，或单条高置信度精确证据已足以稳定支撑 -> `pass`
+- 只看 `city`
+- 不得读取地址字段，不得从地址里反推行政区划
+- 无有效 `city` 证据，或证据 `city` 与输入 `city` 直接冲突 -> `fail`
+- 只有单条 `city` 一致证据且置信度不足 -> `risk`
+- 多条 `city` 一致证据，或单条高置信度 `city` 一致证据 -> `pass`
 
 ### 7.6 `category`
 
-`category` 只判断类型是否与证据中的业态/类目一致。
+`category` 优先比较输入 `poi_type` 与证据中的 `typecode`。
 
-- 只看有效类型证据数量、强支持/中支持数量、硬冲突数量和最佳匹配分数
-- 无有效类型证据、或最佳匹配分数低于阈值 -> `fail`
-- 只有单条但置信度不足的强支持证据、或只能达到中等匹配 -> `risk`
-- 多条强支持证据共同支持当前类型，或单条高置信度强支持证据已足以稳定支撑 -> `pass`
+- 优先使用 `evidence.data.raw_data.typecode`
+- 次优先使用 `evidence.data.raw_data.data.typecode`
+- 只有类目中文名、没有 `typecode` 的证据，只能作为弱支撑
+- 没有可用 `typecode` 证据 -> `fail`
+- `typecode` 与 `poi_type` 直接冲突 -> `fail`
+- 仅有单条 `typecode` 精确匹配证据但置信度不足 -> `risk`
+- 有高置信度 `typecode` 精确匹配，或多条 `typecode` 精确匹配 -> `pass`
 
 ### 7.7 `evidence_sufficiency`
 
@@ -293,6 +293,12 @@ canonical 输入的核心字段如下：
 
 - `qc_manual_review_required`
 - `upstream_manual_review_required`
+
+其中 `upstream_manual_review_required` 固定由平铺输入 `verify_result` 推导，不再读取 `upstream_decision.*`：
+
+- `核实通过` -> `false`
+- `需人工核实` / `需要人工核实` -> `true`
+- 其他值 -> `unresolved`
 
 对比逻辑：
 

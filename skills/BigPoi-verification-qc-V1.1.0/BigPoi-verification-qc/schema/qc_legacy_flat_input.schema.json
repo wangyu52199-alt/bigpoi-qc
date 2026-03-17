@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "QC Legacy Flat Input Schema",
-  "description": "Legacy flat input accepted by BigPOI verification QC before normalization.",
+  "description": "Deprecated alias of the official flat QC input schema. Kept only for historical compatibility.",
   "type": "object",
   "properties": {
     "task_id": {

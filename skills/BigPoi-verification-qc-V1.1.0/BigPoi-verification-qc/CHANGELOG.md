@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## [2.3.2] - 2026-03-17
+
+### 调整
+- 将上游人工核实信号识别逻辑改为直接读取平铺输入 `verify_result`
+- 固定映射规则：`核实通过 -> false`，`需人工核实/需要人工核实 -> true`
+- 不再以 `upstream_decision.*` 作为 `downgrade_consistency` 的主判定来源
+
+### 文档
+- 更新 `SKILL.md`，明确 `verify_result` 是上游人工核实信号的唯一官方输入字段
+
+## [2.3.1] - 2026-03-17
+
+### 调整
+- 将 DSL 和结果收敛逻辑中仍为 `0.90` 的“高置信度支持”门槛统一下调为 `0.85`
+- 统一 `name` 高置信强支持、`address` 高置信精确支持、`evidence_sufficiency` 高权威高置信支持的置信度口径
+
+### 文档
+- 更新 `SKILL.md`，明确当前默认高置信度门槛为 `verification.confidence >= 0.85`
+
+## [2.3.0] - 2026-03-17
+
+### 改进
+- 将 `schema/qc_input.schema.json` 收敛为上游平铺输入的唯一官方契约，不再以 canonical 输入作为主口径
+- 调整 `rules/decision_tables.json`，将 `location` 的通过阈值放宽到 `200m`，并将 `201-500m` 定义为风险区间、`>500m` 定义为失败区间
+- 调整 `rules/decision_tables.json`，将 `administrative` 维度收敛为只比较输入 `city` 与证据 `administrative.city`，禁止引入地址字段
+- 调整 `rules/decision_tables.json`，将 `category` 维度改为优先比较输入 `poi_type` 与证据 `typecode`
+- 调整 `rules/decision_tables.json` 和 `SKILL.md`，明确 `address` 的精确支持、软匹配、硬冲突定义，并要求地址解释输出真实冲突点
+
+### 文档
+- 更新 `SKILL.md` 执行流程，明确直接消费平铺输入，不再执行结构归一化
+- 更新 `rules/rules.yaml`、`examples/sample_input.json` 与相关 schema 描述，使其与平铺输入主口径保持一致
+
 ## [2.2.8] - 2026-03-17
 
 ### 修复

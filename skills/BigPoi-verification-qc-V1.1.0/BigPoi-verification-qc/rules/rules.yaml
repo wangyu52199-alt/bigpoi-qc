@@ -1,5 +1,5 @@
-version: 2.0.0
-description: BigPOI QC deterministic rule registry v2.0
+version: 2.3.0
+description: BigPOI QC deterministic rule registry v2.3
 
 rules:
   - id: R1
@@ -24,19 +24,19 @@ rules:
     name: 地址一致性检查
     dimension: address
     severity: high
-    description: 基于地址文本、门牌号、街道信息和歧义情况判断 record.location.address 是否可信
+    description: 仅基于输入 address 与证据 address 判断地址是否可信，解释中必须输出真实冲突点
 
   - id: R5
     name: 行政区划一致性检查
     dimension: administrative
     severity: high
-    description: 基于省市区是否一致及与坐标、地址的关系判断行政区划是否可信
+    description: 仅基于输入 city 与证据 city 判断行政区划是否可信，不得引入地址字段
 
   - id: R6
     name: 类型一致性检查
     dimension: category
     severity: medium
-    description: 基于类型匹配度和业务冲突判断 record.category 是否可信
+    description: 优先基于输入 poi_type 与高德等证据 typecode 的精确匹配判断类型是否可信
 
   - id: R7
     name: 人工核实一致性检查

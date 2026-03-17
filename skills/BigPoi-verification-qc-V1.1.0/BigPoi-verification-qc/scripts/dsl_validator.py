@@ -30,7 +30,7 @@ DIMENSION_RULE_MAP = {
 }
 EXPECTED_WORKFLOW = [
     'integrity_check',
-    'normalize_record_and_evidence',
+    'preprocess_evidence',
     'compute_dimension_metrics',
     'evaluate_dimension_outcomes',
     'evaluate_evidence_sufficiency',

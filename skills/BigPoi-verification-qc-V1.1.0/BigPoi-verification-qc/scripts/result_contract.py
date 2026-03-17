@@ -200,7 +200,7 @@ def _derive_evidence_sufficiency(dimension_results: Dict[str, Any]) -> Dict[str,
     only_evidence = supporting_evidence[0]
     only_source_type = _evidence_source_type(only_evidence)
     only_confidence = _evidence_confidence(only_evidence)
-    if only_source_type in AUTHORITATIVE_SOURCE_TYPES and only_confidence >= 0.9:
+    if only_source_type in AUTHORITATIVE_SOURCE_TYPES and only_confidence >= 0.85:
         return {
             'status': 'pass',
             'risk_level': 'none',
