@@ -346,6 +346,38 @@
           }
         },
         {
+          "name": "high_confidence_support_count",
+          "function": "count",
+          "selector": "evidence_data[]",
+          "where": {
+            "all": [
+              {
+                "left": {
+                  "ref": "evidence.verification.is_valid"
+                },
+                "op": "eq",
+                "right": true
+              },
+              {
+                "left": {
+                  "ref": "evidence.data.existence"
+                },
+                "op": "eq",
+                "right": {
+                  "ref": "record.existence"
+                }
+              },
+              {
+                "left": {
+                  "ref": "evidence.verification.confidence"
+                },
+                "op": "gte",
+                "right": 0.85
+              }
+            ]
+          }
+        },
+        {
           "name": "conflict_count",
           "function": "count",
           "selector": "evidence_data[]",
@@ -536,13 +568,31 @@
           "issue_code": "single_supporting_existence_evidence",
           "trigger_rule": "R1",
           "when": {
-            "left": {
-              "ref": "metric.support_count"
-            },
-            "op": "eq",
-            "right": 1
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.support_count"
+                },
+                "op": "eq",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.conflict_count"
+                },
+                "op": "eq",
+                "right": 0
+              },
+              {
+                "left": {
+                  "ref": "metric.high_confidence_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
-          "explanation_template": "存在性风险：仅有 1 条有效证据支持 record.existence。",
+          "explanation_template": "存在性风险：仅有 1 条有效支持证据，且该证据置信度不足以单独稳定支撑 record.existence。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -648,13 +698,6 @@
             "all": [
               {
                 "left": {
-                  "ref": "metric.support_count"
-                },
-                "op": "gte",
-                "right": 2
-              },
-              {
-                "left": {
                   "ref": "metric.conflict_count"
                 },
                 "op": "eq",
@@ -666,10 +709,28 @@
                 },
                 "op": "gte",
                 "right": 0.7
+              },
+              {
+                "any": [
+                  {
+                    "left": {
+                      "ref": "metric.support_count"
+                    },
+                    "op": "gte",
+                    "right": 2
+                  },
+                  {
+                    "left": {
+                      "ref": "metric.high_confidence_support_count"
+                    },
+                    "op": "gte",
+                    "right": 1
+                  }
+                ]
               }
             ]
           },
-          "explanation_template": "存在性通过：至少两条有效证据支持，且不存在有效冲突证据。",
+          "explanation_template": "存在性通过：多条有效证据支持，或单条高置信度有效证据已足以稳定支持 record.existence，且不存在有效冲突证据。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -693,7 +754,7 @@
                 }
               ]
             },
-            "min_items": 2,
+            "min_items": 1,
             "max_items": 5
           }
         }
@@ -752,6 +813,36 @@
                 },
                 "op": "gte",
                 "right": 0.85
+              }
+            ]
+          }
+        },
+        {
+          "name": "high_confidence_strong_support_count",
+          "function": "count",
+          "selector": "evidence_data[]",
+          "where": {
+            "all": [
+              {
+                "left": {
+                  "ref": "evidence.verification.is_valid"
+                },
+                "op": "eq",
+                "right": true
+              },
+              {
+                "left": {
+                  "ref": "evidence.matching.name_similarity"
+                },
+                "op": "gte",
+                "right": 0.95
+              },
+              {
+                "left": {
+                  "ref": "evidence.verification.confidence"
+                },
+                "op": "gte",
+                "right": 0.9
               }
             ]
           }
@@ -889,13 +980,31 @@
           "issue_code": "single_strong_name_support",
           "trigger_rule": "R2",
           "when": {
-            "left": {
-              "ref": "metric.strong_support_count"
-            },
-            "op": "eq",
-            "right": 1
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.strong_support_count"
+                },
+                "op": "eq",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.hard_conflict_count"
+                },
+                "op": "eq",
+                "right": 0
+              },
+              {
+                "left": {
+                  "ref": "metric.high_confidence_strong_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
-          "explanation_template": "名称风险：仅有 1 条强支持名称证据。",
+          "explanation_template": "名称风险：仅有 1 条强支持名称证据，且该证据置信度或相似度不足以单独稳定支持 record.name。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -928,11 +1037,22 @@
           "issue_code": "medium_name_similarity",
           "trigger_rule": "R2",
           "when": {
-            "left": {
-              "ref": "metric.medium_support_count"
-            },
-            "op": "gte",
-            "right": 1
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.medium_support_count"
+                },
+                "op": "gte",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.strong_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
           "explanation_template": "名称风险：有效名称证据相似度处于 0.60-0.84 区间。",
           "evidence_policy": {
@@ -971,21 +1091,32 @@
             "all": [
               {
                 "left": {
-                  "ref": "metric.strong_support_count"
-                },
-                "op": "gte",
-                "right": 2
-              },
-              {
-                "left": {
                   "ref": "metric.hard_conflict_count"
                 },
                 "op": "eq",
                 "right": 0
+              },
+              {
+                "any": [
+                  {
+                    "left": {
+                      "ref": "metric.strong_support_count"
+                    },
+                    "op": "gte",
+                    "right": 2
+                  },
+                  {
+                    "left": {
+                      "ref": "metric.high_confidence_strong_support_count"
+                    },
+                    "op": "gte",
+                    "right": 1
+                  }
+                ]
               }
             ]
           },
-          "explanation_template": "名称通过：至少两条有效证据强支持，且不存在硬冲突。",
+          "explanation_template": "名称通过：多条强支持证据，或单条高置信度强支持证据已足以稳定支持 record.name，且不存在硬冲突。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -1007,7 +1138,7 @@
                 }
               ]
             },
-            "min_items": 2,
+            "min_items": 1,
             "max_items": 5
           }
         }
@@ -1071,6 +1202,36 @@
                 },
                 "op": "lt",
                 "right": 50
+              }
+            ]
+          }
+        },
+        {
+          "name": "high_confidence_support_within_30m_count",
+          "function": "count",
+          "selector": "evidence_data[]",
+          "where": {
+            "all": [
+              {
+                "left": {
+                  "ref": "evidence.verification.is_valid"
+                },
+                "op": "eq",
+                "right": true
+              },
+              {
+                "left": {
+                  "ref": "evidence.matching.location_distance"
+                },
+                "op": "lt",
+                "right": 30
+              },
+              {
+                "left": {
+                  "ref": "evidence.verification.confidence"
+                },
+                "op": "gte",
+                "right": 0.85
               }
             ]
           }
@@ -1261,13 +1422,31 @@
           "issue_code": "single_coordinate_support",
           "trigger_rule": "R3",
           "when": {
-            "left": {
-              "ref": "metric.support_within_50m_count"
-            },
-            "op": "eq",
-            "right": 1
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.support_within_50m_count"
+                },
+                "op": "eq",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.boundary_conflict_level"
+                },
+                "op": "eq",
+                "right": "none"
+              },
+              {
+                "left": {
+                  "ref": "metric.high_confidence_support_within_30m_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
-          "explanation_template": "坐标风险：仅有 1 条有效坐标证据落在 50 米阈值内。",
+          "explanation_template": "坐标风险：仅有 1 条近距离坐标证据，且该证据距离或置信度不足以单独稳定支持 record.location。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -1371,13 +1550,6 @@
             "all": [
               {
                 "left": {
-                  "ref": "metric.support_within_50m_count"
-                },
-                "op": "gte",
-                "right": 2
-              },
-              {
-                "left": {
                   "ref": "metric.max_distance_meters"
                 },
                 "op": "lt",
@@ -1389,10 +1561,28 @@
                 },
                 "op": "eq",
                 "right": "none"
+              },
+              {
+                "any": [
+                  {
+                    "left": {
+                      "ref": "metric.support_within_50m_count"
+                    },
+                    "op": "gte",
+                    "right": 2
+                  },
+                  {
+                    "left": {
+                      "ref": "metric.high_confidence_support_within_30m_count"
+                    },
+                    "op": "gte",
+                    "right": 1
+                  }
+                ]
               }
             ]
           },
-          "explanation_template": "坐标通过：至少两条有效证据距离在 50 米内，且不存在跨市或跨省边界冲突。",
+          "explanation_template": "坐标通过：多条近距离坐标证据共同支持，或单条高置信度坐标证据在 30 米内即可稳定支持 record.location，且不存在边界冲突。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -1414,7 +1604,7 @@
                 }
               ]
             },
-            "min_items": 2,
+            "min_items": 1,
             "max_items": 5
           }
         }
@@ -1464,6 +1654,36 @@
             },
             "op": "eq",
             "right": true
+          },
+          "params": {
+            "match_function": "address_match_level",
+            "record_selector": "record.location.address",
+            "evidence_selector": "evidence.data.location.address",
+            "normalizer": "address",
+            "levels": ["exact"]
+          }
+        },
+        {
+          "name": "high_confidence_exact_support_count",
+          "function": "count_match_level",
+          "selector": "evidence_data[]",
+          "where": {
+            "all": [
+              {
+                "left": {
+                  "ref": "evidence.verification.is_valid"
+                },
+                "op": "eq",
+                "right": true
+              },
+              {
+                "left": {
+                  "ref": "evidence.verification.confidence"
+                },
+                "op": "gte",
+                "right": 0.9
+              }
+            ]
           },
           "params": {
             "match_function": "address_match_level",
@@ -1574,13 +1794,31 @@
           "issue_code": "single_exact_address_support",
           "trigger_rule": "R4",
           "when": {
-            "left": {
-              "ref": "metric.exact_support_count"
-            },
-            "op": "eq",
-            "right": 1
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.exact_support_count"
+                },
+                "op": "eq",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.hard_conflict_count"
+                },
+                "op": "eq",
+                "right": 0
+              },
+              {
+                "left": {
+                  "ref": "metric.high_confidence_exact_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
-          "explanation_template": "地址风险：仅有 1 条有效地址证据完全支持 record.location.address。",
+          "explanation_template": "地址风险：仅有 1 条精确地址证据，且该证据置信度不足以单独稳定支持 record.location.address。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -1601,11 +1839,22 @@
           "issue_code": "soft_address_match_only",
           "trigger_rule": "R4",
           "when": {
-            "left": {
-              "ref": "metric.soft_support_count"
-            },
-            "op": "gte",
-            "right": 1
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.soft_support_count"
+                },
+                "op": "gte",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.exact_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
           "explanation_template": "地址风险：有效地址证据只支持主地址、分支后缀或缺失门牌的软匹配。",
           "evidence_policy": {
@@ -1631,21 +1880,32 @@
             "all": [
               {
                 "left": {
-                  "ref": "metric.exact_support_count"
-                },
-                "op": "gte",
-                "right": 2
-              },
-              {
-                "left": {
                   "ref": "metric.hard_conflict_count"
                 },
                 "op": "eq",
                 "right": 0
+              },
+              {
+                "any": [
+                  {
+                    "left": {
+                      "ref": "metric.exact_support_count"
+                    },
+                    "op": "gte",
+                    "right": 2
+                  },
+                  {
+                    "left": {
+                      "ref": "metric.high_confidence_exact_support_count"
+                    },
+                    "op": "gte",
+                    "right": 1
+                  }
+                ]
               }
             ]
           },
-          "explanation_template": "地址通过：至少两条有效地址证据与 record.location.address 完全一致，且不存在硬冲突。",
+          "explanation_template": "地址通过：多条精确地址证据共同支持，或单条高置信度精确地址证据已足以稳定支持 record.location.address，且不存在硬冲突。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -1655,7 +1915,7 @@
               },
               "op": "exists"
             },
-            "min_items": 2,
+            "min_items": 1,
             "max_items": 5
           }
         }
@@ -1715,6 +1975,38 @@
             },
             "op": "eq",
             "right": true
+          },
+          "params": {
+            "match_function": "administrative_match_level",
+            "record_selector": "record.administrative",
+            "evidence_admin_selector": "evidence.data.administrative",
+            "evidence_address_selector": "evidence.data.location.address",
+            "evidence_coordinate_selector": "evidence.data.location",
+            "normalizer": "administrative",
+            "levels": ["exact"]
+          }
+        },
+        {
+          "name": "high_confidence_exact_support_count",
+          "function": "count_match_level",
+          "selector": "evidence_data[]",
+          "where": {
+            "all": [
+              {
+                "left": {
+                  "ref": "evidence.verification.is_valid"
+                },
+                "op": "eq",
+                "right": true
+              },
+              {
+                "left": {
+                  "ref": "evidence.verification.confidence"
+                },
+                "op": "gte",
+                "right": 0.9
+              }
+            ]
           },
           "params": {
             "match_function": "administrative_match_level",
@@ -1851,13 +2143,31 @@
           "issue_code": "single_exact_admin_support",
           "trigger_rule": "R5",
           "when": {
-            "left": {
-              "ref": "metric.exact_support_count"
-            },
-            "op": "eq",
-            "right": 1
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.exact_support_count"
+                },
+                "op": "eq",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.hard_conflict_count"
+                },
+                "op": "eq",
+                "right": 0
+              },
+              {
+                "left": {
+                  "ref": "metric.high_confidence_exact_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
-          "explanation_template": "行政区划风险：仅有 1 条有效证据完全支持 record.administrative。",
+          "explanation_template": "行政区划风险：仅有 1 条精确行政区划证据，且该证据置信度不足以单独稳定支持 record.administrative。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -1888,11 +2198,22 @@
           "issue_code": "soft_admin_support",
           "trigger_rule": "R5",
           "when": {
-            "left": {
-              "ref": "metric.soft_support_count"
-            },
-            "op": "gte",
-            "right": 1
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.soft_support_count"
+                },
+                "op": "gte",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.exact_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
           "explanation_template": "行政区划风险：有效证据仅支持省市一致或区县边界附近的一致性。",
           "evidence_policy": {
@@ -1928,21 +2249,32 @@
             "all": [
               {
                 "left": {
-                  "ref": "metric.exact_support_count"
-                },
-                "op": "gte",
-                "right": 2
-              },
-              {
-                "left": {
                   "ref": "metric.hard_conflict_count"
                 },
                 "op": "eq",
                 "right": 0
+              },
+              {
+                "any": [
+                  {
+                    "left": {
+                      "ref": "metric.exact_support_count"
+                    },
+                    "op": "gte",
+                    "right": 2
+                  },
+                  {
+                    "left": {
+                      "ref": "metric.high_confidence_exact_support_count"
+                    },
+                    "op": "gte",
+                    "right": 1
+                  }
+                ]
               }
             ]
           },
-          "explanation_template": "行政区划通过：至少两条有效证据完全支持，且不存在市级或省级冲突。",
+          "explanation_template": "行政区划通过：多条精确证据共同支持，或单条高置信度精确证据已足以稳定支持 record.administrative，且不存在市级或省级冲突。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -1962,7 +2294,7 @@
                 }
               ]
             },
-            "min_items": 2,
+            "min_items": 1,
             "max_items": 5
           }
         }
@@ -2018,6 +2350,36 @@
               {
                 "left": {
                   "ref": "evidence.matching.category_match"
+                },
+                "op": "gte",
+                "right": 0.85
+              }
+            ]
+          }
+        },
+        {
+          "name": "high_confidence_strong_support_count",
+          "function": "count",
+          "selector": "evidence_data[]",
+          "where": {
+            "all": [
+              {
+                "left": {
+                  "ref": "evidence.verification.is_valid"
+                },
+                "op": "eq",
+                "right": true
+              },
+              {
+                "left": {
+                  "ref": "evidence.matching.category_match"
+                },
+                "op": "gte",
+                "right": 0.95
+              },
+              {
+                "left": {
+                  "ref": "evidence.verification.confidence"
                 },
                 "op": "gte",
                 "right": 0.85
@@ -2158,13 +2520,31 @@
           "issue_code": "single_strong_category_support",
           "trigger_rule": "R6",
           "when": {
-            "left": {
-              "ref": "metric.strong_support_count"
-            },
-            "op": "eq",
-            "right": 1
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.strong_support_count"
+                },
+                "op": "eq",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.hard_conflict_count"
+                },
+                "op": "eq",
+                "right": 0
+              },
+              {
+                "left": {
+                  "ref": "metric.high_confidence_strong_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
-          "explanation_template": "类型风险：仅有 1 条有效证据强支持 record.category。",
+          "explanation_template": "类型风险：仅有 1 条强支持类型证据，且该证据置信度或匹配度不足以单独稳定支持 record.category。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -2185,11 +2565,22 @@
           "issue_code": "medium_category_match",
           "trigger_rule": "R6",
           "when": {
-            "left": {
-              "ref": "metric.medium_support_count"
-            },
-            "op": "gte",
-            "right": 1
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.medium_support_count"
+                },
+                "op": "gte",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.strong_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
           },
           "explanation_template": "类型风险：有效类型证据匹配度处于 0.60-0.84 区间。",
           "evidence_policy": {
@@ -2215,21 +2606,32 @@
             "all": [
               {
                 "left": {
-                  "ref": "metric.strong_support_count"
-                },
-                "op": "gte",
-                "right": 2
-              },
-              {
-                "left": {
                   "ref": "metric.hard_conflict_count"
                 },
                 "op": "eq",
                 "right": 0
+              },
+              {
+                "any": [
+                  {
+                    "left": {
+                      "ref": "metric.strong_support_count"
+                    },
+                    "op": "gte",
+                    "right": 2
+                  },
+                  {
+                    "left": {
+                      "ref": "metric.high_confidence_strong_support_count"
+                    },
+                    "op": "gte",
+                    "right": 1
+                  }
+                ]
               }
             ]
           },
-          "explanation_template": "类型通过：至少两条有效证据强支持 record.category，且不存在硬冲突。",
+          "explanation_template": "类型通过：多条强支持类型证据共同支持，或单条高置信度强支持类型证据已足以稳定支持 record.category，且不存在硬冲突。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_data[]",
@@ -2239,7 +2641,7 @@
               },
               "op": "exists"
             },
-            "min_items": 2,
+            "min_items": 1,
             "max_items": 5
           }
         }

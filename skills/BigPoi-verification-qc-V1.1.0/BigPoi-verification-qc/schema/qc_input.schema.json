@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "QC Input Schema",
-  "description": "BigPOI verification QC input schema v2.2.0. Accepts canonical input or legacy flat input.",
+  "description": "BigPOI verification QC input schema v2.2.4. Accepts canonical input or legacy flat input.",
   "oneOf": [
     {
       "$ref": "#/definitions/canonical_input"
@@ -73,7 +73,7 @@
         },
         "evidence_data": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "items": {
             "type": "object",
             "required": ["evidence_id", "source", "data", "verification"],

@@ -71,6 +71,38 @@ class FileLoader:
 
         return cwd
 
+    @staticmethod
+    def _project_root_from_skill_install_path(path: Path) -> Optional[Path]:
+        """如果路径位于 .claude/skills 或 .openclaw/skills 下，返回其工作区根目录。"""
+        parts = list(path.resolve().parts)
+        normalized = [part.lower() for part in parts]
+        for index, part in enumerate(normalized[:-1]):
+            if part in ('.claude', '.openclaw') and normalized[index + 1] == 'skills':
+                if index == 0:
+                    return None
+                root = Path(parts[0])
+                for segment in parts[1:index]:
+                    root /= segment
+                return root
+        return None
+
+    def _is_skill_install_artifact(self, path: Path) -> bool:
+        """判断候选是否位于技能安装目录下。"""
+        return self._project_root_from_skill_install_path(path) is not None
+
+    def _prefer_workspace_candidates(self, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        在存在多个合法候选时，优先使用非技能安装目录下的正式工作区结果。
+        只有当全部候选都位于技能安装目录下时，才保留这些候选参与后续判断。
+        """
+        preferred = [
+            candidate
+            for candidate in candidates
+            if not self._is_skill_install_artifact(candidate['complete_path'])
+            and not self._is_skill_install_artifact(candidate['source_path'])
+        ]
+        return preferred or candidates
+
     def load_result(
         self,
         task_id: str,
@@ -477,7 +509,7 @@ class FileLoader:
                 except Exception as exc:
                     rejected.append(f'{complete_path}: {exc}')
 
-        valid_candidates = list(candidates.values())
+        valid_candidates = self._prefer_workspace_candidates(list(candidates.values()))
         if not valid_candidates:
             detail = '\n'.join(rejected[:10])
             if detail:

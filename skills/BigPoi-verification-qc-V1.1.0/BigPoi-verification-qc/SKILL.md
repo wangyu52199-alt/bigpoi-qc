@@ -1,6 +1,6 @@
 ---
 name: bigpoi-verification-qc
-version: 2.2.0
+version: 2.2.4
 description:
   对上游大POI核实结果进行确定性质量检验，兼容 legacy 平铺输入与标准输入，重点检查名称、坐标、地址、行政区划、类型、存在性，以及人工核实降级是否一致。
   输出结构化、可审计、可复算的质检结果。
@@ -15,7 +15,7 @@ metadata:
   validators_path: ./scripts/result_validator.py
 -------------
 
-# QC Skill · Big POI Verification v2.2.0
+# QC Skill · Big POI Verification v2.2.4
 
 ## 1. 技能目标
 
@@ -93,10 +93,12 @@ legacy 平铺输入的典型字段包括：
 - `verify_info`
 - `verify_result`
 
-内部规则执行时，一律只允许消费标准 canonical 输入。也就是说：
+内部规则执行时，一律只允许消费经过预处理的 canonical 输入。也就是说：
 
 - 如果收到 legacy 平铺输入，必须先调用 `./scripts/normalize_legacy_input.py`
-- 归一化结果必须转成 canonical 结构后，才允许进入完整性检查和维度判定
+- 如果收到 canonical 输入，也必须先经过 `./scripts/normalize_legacy_input.py` 的预处理逻辑
+- 预处理必须先完成三件事：结构归一化、`source_type` 规范化、无效证据过滤
+- 只有预处理后的 canonical 结构，才允许进入完整性检查和维度判定
 
 canonical 输入的核心字段如下：
 
@@ -120,9 +122,33 @@ canonical 输入的核心字段如下：
 
 ## 4. 必须执行的完整性检查
 
-在进入任何维度判定前，必须先完成输入归一化，再做完整性检查。
+在进入任何维度判定前，必须先完成输入归一化和证据预处理，再做完整性检查。
 
 禁止直接对 legacy 平铺输入执行完整性检查。
+
+证据预处理阶段必须先过滤以下无效证据：
+
+- `verification.is_valid = false` 的证据
+- 明显是附属点位或出入口的证据，例如 `东门`、`西门`、`南门`、`北门`、`停车场`、`出入口`
+- 对政府类主体而言，明显是关联设施而不是主实体的证据，例如 `政务中心`、`办事大厅`、`便民服务中心`
+
+过滤后的 `evidence_data` 才是完整性检查和后续维度判定的唯一输入。
+
+证据预处理阶段还必须统一 `source.source_type`，至少收敛到以下内部枚举之一：
+
+- `business_license`
+- `official_registry`
+- `government`
+- `official_data`
+- `map_data`
+- `platform`
+- `ota`
+- `merchant`
+- `ugc`
+- `review`
+- `unknown`
+
+如果上游传入的是 `地图数据`、`官方数据`、`official`、`map_vendor` 等非标准写法，必须先规范化，再允许 DSL 按来源优先级判定。
 
 当以下任一字段缺失、为空或为 null 时，直接判定相关维度为 `fail`：
 
@@ -150,8 +176,8 @@ canonical 输入的核心字段如下：
 必须严格按以下顺序执行：
 
 1. 判断输入形态是 canonical 还是 legacy flat
-2. 如果是 legacy flat，必须先调用 `./scripts/normalize_legacy_input.py`
-3. 仅对归一化后的 canonical 输入执行完整性检查
+2. 调用 `./scripts/normalize_legacy_input.py` 执行输入归一化、`source_type` 规范化与证据预处理
+3. 仅对预处理后的 canonical 输入执行完整性检查
 4. 判定 6 个核心维度：`existence`、`name`、`location`、`address`、`administrative`、`category`
 5. 基于 6 个核心维度推导 `qc_manual_review_required`
 6. 对比上游人工核实决策，判定 `downgrade_consistency`
@@ -195,8 +221,8 @@ canonical 输入的核心字段如下：
 
 - 只看有效存在性证据数量、支持/冲突证据数量、权威冲突证据和平均置信度
 - 无有效存在性证据、存在权威冲突证据、或整体置信度过低 -> `fail`
-- 只有单条支持证据、支持与冲突并存、或置信度中等 -> `risk`
-- 多条有效证据稳定支持存在性 -> `pass`
+- 只有单条但置信度不足的支持证据、支持与冲突并存、或置信度中等 -> `risk`
+- 多条有效证据稳定支持存在性，或单条高置信度证据已足以稳定支撑 -> `pass`
 
 ### 7.2 `name`
 
@@ -204,8 +230,8 @@ canonical 输入的核心字段如下：
 
 - 只看有效名称证据数量、强匹配/中匹配支持数量、硬冲突数量和最佳相似度
 - 无有效名称证据、或全部相似度低于阈值 -> `fail`
-- 只有单条强支持证据、或只能达到中等相似度 -> `risk`
-- 多条强支持证据稳定指向同一名称 -> `pass`
+- 只有单条但置信度不足的强支持证据、或只能达到中等相似度 -> `risk`
+- 多条强支持证据稳定指向同一名称，或单条高置信度强支持证据已足以稳定支撑 -> `pass`
 
 ### 7.3 `location`
 
@@ -213,8 +239,8 @@ canonical 输入的核心字段如下：
 
 - 只看有效坐标证据数量、经纬度偏离、跨市/跨省边界和权威坐标偏离
 - 无有效坐标证据、跨市/跨省边界冲突、或权威坐标偏离过大 -> `fail`
-- 只有单条近距离坐标支持、偏离处于中间区间、或存在区县边界冲突 -> `risk`
-- 多条近距离坐标证据共同支持 record 坐标 -> `pass`
+- 只有单条但距离或置信度不足的近距离坐标支持、偏离处于中间区间、或存在区县边界冲突 -> `risk`
+- 多条近距离坐标证据共同支持 record 坐标，或单条高置信度近距离坐标证据已足以稳定支撑 -> `pass`
 - 地址文本冲突必须落在 `address`
 
 ### 7.4 `address`
@@ -223,8 +249,8 @@ canonical 输入的核心字段如下：
 
 - 只看有效地址证据数量、精确支持、弱支持和直接冲突
 - 无有效地址证据、或街道/门牌/楼栋等发生直接冲突 -> `fail`
-- 只有单条精确支持、或只有弱匹配/模糊匹配 -> `risk`
-- 多条精确地址证据共同支持 record.address -> `pass`
+- 只有单条但置信度不足的精确支持、或只有弱匹配/模糊匹配 -> `risk`
+- 多条精确地址证据共同支持 record.address，或单条高置信度精确证据已足以稳定支撑 -> `pass`
 
 ### 7.5 `administrative`
 
@@ -232,8 +258,8 @@ canonical 输入的核心字段如下：
 
 - 只看有效行政区划证据数量、精确支持、弱支持和直接冲突
 - 无有效行政区划证据、或省市区存在明确直接冲突 -> `fail`
-- 只有单条精确支持、或只能形成弱支持 -> `risk`
-- 多条精确证据一致支持 record.administrative -> `pass`
+- 只有单条但置信度不足的精确支持、或只能形成弱支持 -> `risk`
+- 多条精确证据一致支持 record.administrative，或单条高置信度精确证据已足以稳定支撑 -> `pass`
 
 ### 7.6 `category`
 
@@ -241,8 +267,8 @@ canonical 输入的核心字段如下：
 
 - 只看有效类型证据数量、强支持/中支持数量、硬冲突数量和最佳匹配分数
 - 无有效类型证据、或最佳匹配分数低于阈值 -> `fail`
-- 只有单条强支持证据、或只能达到中等匹配 -> `risk`
-- 多条强支持证据共同支持当前类型 -> `pass`
+- 只有单条但置信度不足的强支持证据、或只能达到中等匹配 -> `risk`
+- 多条强支持证据共同支持当前类型，或单条高置信度强支持证据已足以稳定支撑 -> `pass`
 
 ### 7.7 `downgrade_consistency`
 
@@ -295,6 +321,8 @@ canonical 输入的核心字段如下：
 默认根目录必须优先使用当前技能工作区根目录，即同时包含 `BigPoi-verification-qc` 和 `qc-write-pg-qc` 的目录；仅在无法定位该工作区时，才允许回退到单技能目录或显式传入的 `QC_OUTPUT_DIR`。
 
 如果显式传入的 `output_dir` 已经是 `{task_id}` 目录，持久化器必须直接复用该目录，不得再追加一层 `{task_id}`。
+
+持久化器不得将结果保存到 `.claude/skills/<skill>/output/results` 或 `.openclaw/skills/<skill>/output/results`。如果解析出的输出目录位于技能安装目录下，必须自动改写到工作区根目录的 `output/results`。
 
 必须生成以下文件：
 

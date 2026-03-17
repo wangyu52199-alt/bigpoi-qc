@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## [2.2.4] - 2026-03-17
+
+### 修复
+- 在 `scripts/normalize_legacy_input.py` 中加入 `source.source_type` 规范化逻辑，统一将 `地图数据`、`官方数据`、`official`、`map_vendor` 等上游写法映射到 QC DSL 识别的内部枚举
+- 保留 `source.original_source_type` 以便审计上游原始来源类型，避免规范化后丢失原始输入
+
+### 文档
+- 更新 `SKILL.md` 预处理流程，明确在无效证据过滤前需要先完成 `source_type` 规范化
+
+## [2.2.3] - 2026-03-17
+
+### 新增
+- 在 `scripts/normalize_legacy_input.py` 中加入统一证据预处理逻辑；无论输入是 canonical 还是 legacy flat，都会在质检前先过滤无效证据
+
+### 修复
+- 过滤 `verification.is_valid = false` 的证据，避免其进入完整性检查和维度判定
+- 增加同主实体去噪规则，过滤明显属于附属点位或关联设施的证据，例如 `东门`、`西门`、`停车场`、`政务中心`、`办事大厅`
+- 允许预处理后 `evidence_data` 为空，由完整性检查统一判定失败，而不是被输入 schema 提前拦截
+
+### 文档
+- 更新 `SKILL.md` 执行流程，明确“归一化 -> 无效证据过滤 -> 完整性检查 -> 维度判定”的固定顺序
+- 更新 `schema/qc_input.schema.json` 描述，使其与预处理后可能出现的空 `evidence_data` 保持一致
+
+## [2.2.2] - 2026-03-17
+
+### 修复
+- 重新检查并收紧 6 个业务维度的 DSL 判定条件，修复“单条支持证据一律不能通过”的过严规则
+- 为 `existence`、`name`、`location`、`address`、`administrative`、`category` 增加“单条高置信度证据可直接通过”的 pass 分支
+- 收紧 `name/category` 的中等匹配风险分支，以及 `address/administrative` 的弱支持风险分支，避免本应 pass 的强支持结果被提前判为 risk
+
+### 文档
+- 更新 `SKILL.md` 中 6 个业务维度的判定语义，明确“高置信度单证据可 pass，低置信度单证据才 risk”
+
+## [2.2.1] - 2026-03-17
+
+### 修复
+- 为 `scripts/result_persister.py` 增加技能安装目录保护；当输出目录解析到 `.claude/skills/<skill>/output/results` 或 `.openclaw/skills/<skill>/output/results` 时，自动改写到工作区根目录的 `output/results`
+
+### 文档
+- 更新 `SKILL.md` 的持久化约束，明确禁止将结果保存到技能安装目录下的 `output/results`
+
 ## [2.2.0] - 2026-03-17
 
 ### 新增

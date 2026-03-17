@@ -11,8 +11,9 @@
 import argparse
 import copy
 import json
+import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
 LEGACY_HINT_FIELDS = {
@@ -29,6 +30,122 @@ MANUAL_REVIEW_KEYWORDS = ('人工', 'manual_review', 'downgraded')
 REJECT_KEYWORDS = ('不通过', '驳回', '拒绝', '不存在', '无效', 'rejected')
 PASS_KEYWORDS = ('通过', 'accepted', 'adopt')
 REQUIRED_UPSTREAM_DIMS = ('existence', 'name', 'location', 'administrative', 'category')
+ANCILLARY_NAME_KEYWORDS = (
+    '东门',
+    '西门',
+    '南门',
+    '北门',
+    '正门',
+    '后门',
+    '侧门',
+    '北侧门',
+    '南侧门',
+    '入口',
+    '出口',
+    '出入口',
+    '停车场',
+    '地下停车场',
+    '停车楼',
+    '门岗',
+    '门卫',
+)
+GOVERNMENT_MAIN_ENTITY_KEYWORDS = ('人民政府', '政府')
+GOVERNMENT_AFFILIATED_FACILITY_KEYWORDS = (
+    '政务中心',
+    '政务服务中心',
+    '办事大厅',
+    '便民服务中心',
+    '市民中心',
+    '服务中心',
+)
+SOURCE_TYPE_ALIAS_GROUPS = {
+    'business_license': (
+        'business_license',
+        'businesslicense',
+        '营业执照',
+        '营业执照信息',
+        '企业营业执照',
+        '执照',
+    ),
+    'official_registry': (
+        'official_registry',
+        'officialregistry',
+        '工商登记',
+        '工商注册',
+        '登记信息',
+        '注册信息',
+        '国家企业信用信息公示系统',
+        '企查查',
+        '天眼查',
+    ),
+    'government': (
+        'government',
+        'gov',
+        '政府',
+        '政府官网',
+        '政府网站',
+        '政府机关',
+        '政务公开',
+    ),
+    'official_data': (
+        'official_data',
+        'officialdata',
+        'official',
+        '官网',
+        '官方网站',
+        '官方',
+        '官方数据',
+    ),
+    'map_data': (
+        'map_data',
+        'mapdata',
+        'map',
+        'map_vendor',
+        '地图',
+        '地图数据',
+        '地图平台',
+    ),
+    'platform': (
+        'platform',
+        '互联网平台',
+        '平台',
+    ),
+    'ota': (
+        'ota',
+        'ota平台',
+        '旅游平台',
+        '携程',
+        '去哪儿',
+        '飞猪',
+        '同程',
+    ),
+    'merchant': (
+        'merchant',
+        '商户',
+        '商户自报',
+    ),
+    'ugc': (
+        'ugc',
+        '用户生成',
+        '用户上传',
+    ),
+    'review': (
+        'review',
+        '点评',
+        '评论',
+        '评价',
+    ),
+    'unknown': (
+        'unknown',
+        '未知',
+    ),
+}
+MAP_SOURCE_HINTS = ('高德', '百度地图', '腾讯地图', 'amap', 'map.baidu', 'qqmap', 'map.qq')
+GOVERNMENT_SOURCE_HINTS = ('政府', '人民政府', 'gov.cn', '政务')
+REGISTRY_SOURCE_HINTS = ('国家企业信用信息公示系统', '企查查', '天眼查', '市场监督')
+OTA_SOURCE_HINTS = ('携程', '去哪儿', '飞猪', '同程', 'ctrip', 'qunar', 'fliggy', 'ly.com')
+REVIEW_SOURCE_HINTS = ('大众点评', '点评', '评价', '评论', 'dianping')
+PLATFORM_SOURCE_HINTS = ('美团', '抖音', '快手', 'meituan', 'douyin', 'kuaishou')
 
 
 def _first_non_empty(*values: Any) -> Any:
@@ -74,6 +191,134 @@ def _copy_json_dict(value: Any) -> Dict[str, Any]:
     if isinstance(value, dict):
         return copy.deepcopy(value)
     return {}
+
+
+def _normalize_name_text(value: Any) -> str:
+    text = str(value or '').strip().lower()
+    if not text:
+        return ''
+    return re.sub(r'[\s\-\_()（）\[\]【】,，、.;；:：/\\]+', '', text)
+
+
+def _normalize_source_type_text(value: Any) -> str:
+    return _normalize_name_text(value)
+
+
+def _strip_ancillary_suffix(name: str) -> str:
+    stripped = name
+    changed = True
+    while changed and stripped:
+        changed = False
+        for keyword in sorted(ANCILLARY_NAME_KEYWORDS, key=len, reverse=True):
+            if stripped.endswith(keyword):
+                stripped = stripped[: -len(keyword)]
+                changed = True
+                break
+    return stripped
+
+
+def _contains_any_keyword(text: str, keywords: Tuple[str, ...]) -> bool:
+    normalized_text = str(text or '').lower()
+    return any(str(keyword).lower() in normalized_text for keyword in keywords)
+
+
+def _normalize_source_type(source: Dict[str, Any]) -> str:
+    raw_source_type = str(_first_non_empty(source.get('source_type'), '') or '')
+    normalized_type = _normalize_source_type_text(raw_source_type)
+    source_name = str(_first_non_empty(source.get('source_name'), '') or '')
+    source_url = str(_first_non_empty(source.get('source_url'), '') or '').lower()
+
+    for canonical, aliases in SOURCE_TYPE_ALIAS_GROUPS.items():
+        if normalized_type in {_normalize_source_type_text(alias) for alias in aliases}:
+            if canonical == 'official_data':
+                if _contains_any_keyword(source_name, REGISTRY_SOURCE_HINTS) or any(
+                    hint in source_url for hint in ('gsxt.gov.cn', 'qcc.com', 'tianyancha.com')
+                ):
+                    return 'official_registry'
+                if _contains_any_keyword(source_name, GOVERNMENT_SOURCE_HINTS) or 'gov.cn' in source_url:
+                    return 'government'
+            return canonical
+
+    if _contains_any_keyword(source_name, MAP_SOURCE_HINTS) or any(hint in source_url for hint in ('amap.com', 'map.baidu.com', 'map.qq.com')):
+        return 'map_data'
+    if _contains_any_keyword(source_name, REGISTRY_SOURCE_HINTS) or any(
+        hint in source_url for hint in ('gsxt.gov.cn', 'qcc.com', 'tianyancha.com')
+    ):
+        return 'official_registry'
+    if _contains_any_keyword(source_name, OTA_SOURCE_HINTS) or any(
+        hint in source_url for hint in ('ctrip.com', 'qunar.com', 'fliggy.com', 'ly.com')
+    ):
+        return 'ota'
+    if _contains_any_keyword(source_name, REVIEW_SOURCE_HINTS) or 'dianping.com' in source_url:
+        return 'review'
+    if _contains_any_keyword(source_name, PLATFORM_SOURCE_HINTS) or any(
+        hint in source_url for hint in ('meituan.com', 'douyin.com', 'kuaishou.com')
+    ):
+        return 'platform'
+    if _contains_any_keyword(source_name, GOVERNMENT_SOURCE_HINTS) or 'gov.cn' in source_url:
+        return 'government'
+    if raw_source_type.strip():
+        return raw_source_type.strip()
+    return 'unknown'
+
+
+def _invalid_evidence_reason(record: Dict[str, Any], evidence: Dict[str, Any]) -> Optional[str]:
+    verification = _copy_json_dict(evidence.get('verification'))
+    if not bool(verification.get('is_valid', True)):
+        return 'verification_marked_invalid'
+
+    record_name = str(_copy_json_dict(record).get('name') or '')
+    evidence_name = str(_copy_json_dict(evidence.get('data')).get('name') or '')
+    if not record_name or not evidence_name:
+        return None
+
+    normalized_record_name = _normalize_name_text(record_name)
+    normalized_evidence_name = _normalize_name_text(evidence_name)
+    if not normalized_record_name or not normalized_evidence_name:
+        return None
+    if normalized_record_name == normalized_evidence_name:
+        return None
+
+    if _strip_ancillary_suffix(normalized_evidence_name) == normalized_record_name:
+        return 'ancillary_entry_or_facility_name'
+
+    if (
+        _contains_any_keyword(record_name, GOVERNMENT_MAIN_ENTITY_KEYWORDS)
+        and _contains_any_keyword(evidence_name, GOVERNMENT_AFFILIATED_FACILITY_KEYWORDS)
+        and normalized_record_name not in normalized_evidence_name
+    ):
+        return 'government_affiliated_facility_not_primary_entity'
+
+    return None
+
+
+def _preprocess_evidence_data(
+    record: Dict[str, Any], evidence_data: Iterable[Dict[str, Any]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    retained: List[Dict[str, Any]] = []
+    filtered: List[Dict[str, Any]] = []
+
+    for item in evidence_data:
+        reason = _invalid_evidence_reason(record, item)
+        if reason is None:
+            retained.append(item)
+            continue
+
+        filtered.append(
+            {
+                'evidence_id': str(_first_non_empty(item.get('evidence_id'), '')),
+                'reason': reason,
+                'name': str(_copy_json_dict(item.get('data')).get('name') or ''),
+            }
+        )
+
+    summary = {
+        'input_evidence_count': len(list(evidence_data)) if not isinstance(evidence_data, list) else len(evidence_data),
+        'retained_evidence_count': len(retained),
+        'filtered_evidence_count': len(filtered),
+        'filtered_evidence': filtered,
+    }
+    return retained, summary
 
 
 def is_canonical_input(payload: Dict[str, Any]) -> bool:
@@ -199,6 +444,11 @@ def _normalize_evidence_item(item: Dict[str, Any]) -> Dict[str, Any]:
 
     verification['is_valid'] = bool(verification.get('is_valid', True))
     verification['confidence'] = _to_probability(verification.get('confidence'), default=1.0)
+    original_source_type = str(_first_non_empty(source.get('source_type'), '') or '')
+    normalized_source_type = _normalize_source_type(source)
+    if original_source_type and original_source_type != normalized_source_type:
+        source['original_source_type'] = original_source_type
+    source['source_type'] = normalized_source_type
 
     evidence['source'] = source
     evidence['data'] = data
@@ -284,31 +534,57 @@ def _build_upstream_decision(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_legacy_input(payload: Dict[str, Any]) -> Dict[str, Any]:
-    evidence_data = list(_normalize_evidence_data(payload))
+    raw_evidence_data = list(_normalize_evidence_data(payload))
+    preliminary_record = {
+        'task_id': str(_first_non_empty(payload.get('task_id'), '')),
+        'poi_id': str(_first_non_empty(payload.get('poi_id'), payload.get('id'), '')),
+        'name': str(_first_non_empty(payload.get('name'), '')),
+        'location': {
+            'longitude': _to_float(payload.get('x_coord')),
+            'latitude': _to_float(payload.get('y_coord')),
+            'address': str(_first_non_empty(payload.get('address'), '')),
+        },
+        'category': str(_first_non_empty(payload.get('poi_type'), '')),
+        'administrative': {
+            'province': str(_first_non_empty(payload.get('province'), '')),
+            'city': str(_first_non_empty(payload.get('city'), '')),
+            'district': str(_first_non_empty(payload.get('district'), '')),
+        },
+        'existence': _derive_record_existence(payload),
+    }
+    evidence_data, preprocessing_summary = _preprocess_evidence_data(preliminary_record, raw_evidence_data)
     administrative = _derive_administrative(payload, evidence_data)
 
     return {
         'record': {
-            'task_id': str(_first_non_empty(payload.get('task_id'), '')),
-            'poi_id': str(_first_non_empty(payload.get('poi_id'), payload.get('id'), '')),
-            'name': str(_first_non_empty(payload.get('name'), '')),
-            'location': {
-                'longitude': _to_float(payload.get('x_coord')),
-                'latitude': _to_float(payload.get('y_coord')),
-                'address': str(_first_non_empty(payload.get('address'), '')),
-            },
-            'category': str(_first_non_empty(payload.get('poi_type'), '')),
+            'task_id': preliminary_record['task_id'],
+            'poi_id': preliminary_record['poi_id'],
+            'name': preliminary_record['name'],
+            'location': preliminary_record['location'],
+            'category': preliminary_record['category'],
             'administrative': administrative,
-            'existence': _derive_record_existence(payload),
+            'existence': preliminary_record['existence'],
+            'preprocessing': preprocessing_summary,
         },
         'evidence_data': evidence_data,
         'upstream_decision': _build_upstream_decision(payload),
     }
 
 
+def preprocess_canonical_input(payload: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = copy.deepcopy(payload)
+    record = _copy_json_dict(normalized.get('record'))
+    raw_evidence_data = [_normalize_evidence_item(item) for item in normalized.get('evidence_data', []) if isinstance(item, dict)]
+    filtered_evidence_data, preprocessing_summary = _preprocess_evidence_data(record, raw_evidence_data)
+    record['preprocessing'] = preprocessing_summary
+    normalized['record'] = record
+    normalized['evidence_data'] = filtered_evidence_data
+    return normalized
+
+
 def normalize_input(payload: Dict[str, Any]) -> Dict[str, Any]:
     if is_canonical_input(payload):
-        return copy.deepcopy(payload)
+        return preprocess_canonical_input(payload)
     if is_legacy_flat_input(payload):
         return normalize_legacy_input(payload)
     raise ValueError('输入既不符合 canonical 结构，也不符合 legacy flat 结构')

@@ -28,6 +28,21 @@ def _is_workspace_root(path: Path) -> bool:
     )
 
 
+def _project_root_from_skill_install_path(path: Path) -> Optional[Path]:
+    """如果路径位于 .claude/skills 或 .openclaw/skills 下，返回其工作区根目录。"""
+    parts = list(path.parts)
+    normalized = [part.lower() for part in parts]
+    for index, part in enumerate(normalized[:-1]):
+        if part in ('.claude', '.openclaw') and normalized[index + 1] == 'skills':
+            if index == 0:
+                return None
+            root = Path(parts[0])
+            for segment in parts[1:index]:
+                root /= segment
+            return root
+    return None
+
+
 def get_default_output_dir() -> str:
     """获取默认输出目录：优先当前技能工作区根目录。"""
     # 1) 明确指定: QC_OUTPUT_DIR 优先
@@ -75,11 +90,37 @@ class ResultPersister:
             output_dir: 输出目录；可传 `output/results` 基目录，也可直接传 `{task_id}` 目录
             logger: 日志记录器，可选
         """
-        if output_dir is None:
-            self.output_dir = Path(get_default_output_dir())
-        else:
-            self.output_dir = Path(output_dir)
         self.logger = logger or logging.getLogger(__name__)
+        if output_dir is None:
+            raw_output_dir = Path(get_default_output_dir())
+        else:
+            raw_output_dir = Path(output_dir)
+        self.output_dir = self._normalize_output_dir(raw_output_dir)
+
+    def _normalize_output_dir(self, output_dir: Path) -> Path:
+        """
+        归一化输出目录，避免结果落到 .claude/skills/<skill>/output/results 下。
+
+        对相对路径，先按当前工作目录解析；如果解析结果位于技能安装目录下，
+        自动改写到工作区根目录的 output/results。
+        """
+        candidate = output_dir.expanduser()
+        if not candidate.is_absolute():
+            candidate = (Path.cwd().resolve() / candidate).resolve()
+        else:
+            candidate = candidate.resolve()
+
+        workspace_root = _project_root_from_skill_install_path(candidate)
+        if workspace_root:
+            rewritten = workspace_root / 'output' / 'results'
+            self.logger.warning(
+                "检测到输出目录位于技能安装目录下，自动改写为工作区输出目录：%s -> %s",
+                candidate,
+                rewritten,
+            )
+            return rewritten
+
+        return candidate
 
     def _resolve_task_dir(self, task_id: str) -> Path:
         """归一化任务目录，避免 output_dir 已包含 task_id 时再拼一层。"""
