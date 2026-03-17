@@ -1,19 +1,21 @@
 ---
 name: bigpoi-verification-qc
-version: 2.1.5
+version: 2.2.0
 description:
-  对上游大POI核实结果进行确定性质量检验，重点检查名称、坐标、地址、行政区划、类型、存在性，以及人工核实降级是否一致。
+  对上游大POI核实结果进行确定性质量检验，兼容 legacy 平铺输入与标准输入，重点检查名称、坐标、地址、行政区划、类型、存在性，以及人工核实降级是否一致。
   输出结构化、可审计、可复算的质检结果。
 metadata:
   rules_path: ./rules/decision_tables.json
   schema_path: ./schema
+  legacy_schema_path: ./schema/qc_legacy_flat_input.schema.json
   config_path: ./config
+  normalizers_path: ./scripts/normalize_legacy_input.py
   persisters_path: ./scripts/result_persister.py
   dsl_validators_path: ./scripts/dsl_validator.py
   validators_path: ./scripts/result_validator.py
 -------------
 
-# QC Skill · Big POI Verification v2.1.5
+# QC Skill · Big POI Verification v2.2.0
 
 ## 1. 技能目标
 
@@ -37,12 +39,16 @@ metadata:
 
 必须优先读取：
 
-1. `./schema/qc_result.schema.json`
-2. `./schema/decision_tables.schema.json`
-3. `./rules/decision_tables.json`
-4. `./config/scoring_policy.json`
-5. `./scripts/dsl_validator.py`
-6. `./scripts/result_persister.py`
+1. `./schema/qc_input.schema.json`
+2. `./schema/qc_legacy_flat_input.schema.json`
+3. `./scripts/normalize_legacy_input.py`
+4. `./schema/qc_result.schema.json`
+5. `./schema/decision_tables.schema.json`
+6. `./rules/decision_tables.json`
+7. `./config/scoring_policy.json`
+8. `./scripts/result_validator.py`
+9. `./scripts/dsl_validator.py`
+10. `./scripts/result_persister.py`
 
 仅作辅助参考：
 
@@ -70,7 +76,29 @@ metadata:
 
 ## 3. 输入约定
 
-输入必须符合 `schema/qc_input.schema.json`，核心字段如下：
+外部输入允许两种形式：
+
+1. 标准 canonical 输入：符合 `schema/qc_input.schema.json` 的 canonical 分支
+2. legacy 平铺输入：符合 `schema/qc_legacy_flat_input.schema.json`
+
+legacy 平铺输入的典型字段包括：
+
+- `task_id`
+- `name`
+- `address`
+- `x_coord`
+- `y_coord`
+- `poi_type`
+- `evidence_record`
+- `verify_info`
+- `verify_result`
+
+内部规则执行时，一律只允许消费标准 canonical 输入。也就是说：
+
+- 如果收到 legacy 平铺输入，必须先调用 `./scripts/normalize_legacy_input.py`
+- 归一化结果必须转成 canonical 结构后，才允许进入完整性检查和维度判定
+
+canonical 输入的核心字段如下：
 
 - `record.task_id`
 - `record.name`
@@ -92,7 +120,9 @@ metadata:
 
 ## 4. 必须执行的完整性检查
 
-在进入任何维度判定前，必须先做完整性检查。
+在进入任何维度判定前，必须先完成输入归一化，再做完整性检查。
+
+禁止直接对 legacy 平铺输入执行完整性检查。
 
 当以下任一字段缺失、为空或为 null 时，直接判定相关维度为 `fail`：
 
@@ -119,12 +149,23 @@ metadata:
 
 必须严格按以下顺序执行：
 
-1. 完整性检查
-2. 判定 6 个核心维度：`existence`、`name`、`location`、`address`、`administrative`、`category`
-3. 基于 6 个核心维度推导 `qc_manual_review_required`
-4. 对比上游人工核实决策，判定 `downgrade_consistency`
-5. 按评分策略计算 `qc_score`
-6. 聚合 `qc_status`、`risk_dims`、`statistics_flags`
+1. 判断输入形态是 canonical 还是 legacy flat
+2. 如果是 legacy flat，必须先调用 `./scripts/normalize_legacy_input.py`
+3. 仅对归一化后的 canonical 输入执行完整性检查
+4. 判定 6 个核心维度：`existence`、`name`、`location`、`address`、`administrative`、`category`
+5. 基于 6 个核心维度推导 `qc_manual_review_required`
+6. 对比上游人工核实决策，判定 `downgrade_consistency`
+7. 按评分策略计算 `qc_score`
+8. 聚合 `qc_status`、`risk_dims`、`statistics_flags`
+9. 对最终 `qc_result` 调用 `./scripts/result_validator.py`
+10. 只有在校验通过后，才允许调用 `./scripts/result_persister.py`
+
+严格禁止：
+
+- 创建任何临时 Python 脚本，例如 `run_qc.py`、`temp_qc_processor.py`
+- 手写 legacy 输入到 canonical 输入的临时映射逻辑
+- 手写结果文件路径或文件名
+- 跳过 `normalize_legacy_input.py`、`result_validator.py`、`result_persister.py`
 
 ## 6. 判定原则
 
@@ -240,6 +281,8 @@ metadata:
 - `risk_dims` 必须与实际 `risk/fail` 维度完全一致
 - `qc_score` 必须可由 `config/scoring_policy.json` 反算
 - `triggered_rules.rule_id` 只能使用 `rules/rules.yaml` 中定义的 `R1-R7`
+
+在声明“质检结果已保存”之前，必须已经成功调用 `result_persister.py`，并且返回路径必须来自 persister 的真实输出，不得自行拼接。
 
 ### 9.1 本地持久化要求
 

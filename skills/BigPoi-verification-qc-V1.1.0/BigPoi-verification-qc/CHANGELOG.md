@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [2.2.0] - 2026-03-17
+
+### 新增
+- 新增 `schema/qc_legacy_flat_input.schema.json`，用于描述旧版平铺输入
+- 新增 `scripts/normalize_legacy_input.py`，用于将 legacy 平铺输入稳定归一化为 canonical 输入
+
+### 改进
+- 将 `schema/qc_input.schema.json` 扩展为同时接受 canonical 输入和 legacy 平铺输入
+- 重写 `SKILL.md` 执行流程，明确 legacy 输入必须先归一化，再执行完整性检查、结果校验和本地持久化
+
+### 约束
+- 明确禁止在执行过程中创建 `run_qc.py`、`temp_qc_processor.py` 等临时 Python 脚本
+- 明确禁止手写持久化路径，要求结果路径只能来自 `result_persister.py` 的真实返回值
+
 ## [2.1.5] - 2026-03-16
 
 ### 修复
