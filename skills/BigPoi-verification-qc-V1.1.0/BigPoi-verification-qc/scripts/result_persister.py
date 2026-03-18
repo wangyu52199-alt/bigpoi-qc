@@ -30,10 +30,36 @@ from result_validator import ResultValidator  # noqa: E402
 
 def _is_workspace_root(path: Path) -> bool:
     """判断是否为当前技能包工作区根目录。"""
+    return _find_qc_skill_dir_under(path) is not None and (path / 'qc-write-pg-qc').is_dir()
+
+
+def _is_qc_skill_dir(path: Path) -> bool:
+    """判断目录是否为主质检技能目录，不依赖固定目录名。"""
     return (
-        (path / 'BigPoi-verification-qc').is_dir()
-        and (path / 'qc-write-pg-qc').is_dir()
+        path.is_dir()
+        and (path / 'scripts' / 'result_validator.py').is_file()
+        and (path / 'scripts' / 'result_contract.py').is_file()
+        and (path / 'schema' / 'qc_result.schema.json').is_file()
+        and (path / 'config' / 'scoring_policy.json').is_file()
     )
+
+
+def _find_qc_skill_dir_under(path: Path) -> Optional[Path]:
+    """在给定目录下查找主质检技能目录，兼容大小写和非固定目录名。"""
+    if not path.is_dir():
+        return None
+
+    preferred_names = ['BigPoi-verification-qc', 'bigpoi-verification-qc']
+    for name in preferred_names:
+        candidate = path / name
+        if _is_qc_skill_dir(candidate):
+            return candidate
+
+    for child in path.iterdir():
+        if _is_qc_skill_dir(child):
+            return child
+
+    return None
 
 
 def _project_root_from_skill_install_path(path: Path) -> Optional[Path]:

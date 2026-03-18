@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [2.3.10] - 2026-03-18
+
+### 调整
+- 调整 `qc-write-pg-qc/scripts/file_loader.py` 和 `qc-write-pg-qc/SKILL.py`，主质检技能目录定位改为按目录结构探测，不再依赖 `BigPoi-verification-qc` 固定目录名
+- 调整 `scripts/result_persister.py` 的工作区根目录识别逻辑，兼容 `bigpoi-verification-qc` 等不同目录名安装形态
+
+### 修复
+- 修复 Linux 服务器或容器中主质检技能目录为小写 `bigpoi-verification-qc` 时，回库候选校验失败并报“未找到 BigPoi-verification-qc 目录”的问题
+
 ## [2.3.9] - 2026-03-18
 
 ### 调整

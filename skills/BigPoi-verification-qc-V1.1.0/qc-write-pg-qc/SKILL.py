@@ -37,15 +37,14 @@ _RESULT_CONTRACT = None
 
 def _find_qc_skill_dir() -> Path:
     """定位主质检技能目录，用于加载结果校验器。"""
-    root_dir = FileLoader()._find_root_dir()
-    candidates = [
-        root_dir / 'BigPoi-verification-qc',
-        SCRIPT_DIR.parent / 'BigPoi-verification-qc',
-    ]
-    for candidate in candidates:
-        if candidate.is_dir():
-            return candidate
-    raise FileNotFoundError('未找到 BigPoi-verification-qc 目录，无法加载结果校验器')
+    try:
+        return FileLoader()._find_qc_skill_dir()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            '未找到主质检技能目录，无法加载结果校验器；'
+            '需包含 scripts/result_validator.py、scripts/result_contract.py、'
+            'schema/qc_result.schema.json、config/scoring_policy.json'
+        ) from exc
 
 
 def get_result_validator():

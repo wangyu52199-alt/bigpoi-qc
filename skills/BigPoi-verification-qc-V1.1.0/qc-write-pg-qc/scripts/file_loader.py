@@ -31,10 +31,39 @@ class FileLoader:
         self._result_contract = None
 
     @staticmethod
+    def _is_qc_skill_dir(path: Path) -> bool:
+        """判断目录是否为主质检技能目录，不依赖固定目录名。"""
+        return (
+            path.is_dir()
+            and (path / 'scripts' / 'result_validator.py').is_file()
+            and (path / 'scripts' / 'result_contract.py').is_file()
+            and (path / 'schema' / 'qc_result.schema.json').is_file()
+            and (path / 'config' / 'scoring_policy.json').is_file()
+        )
+
+    @classmethod
+    def _find_qc_skill_dir_under(cls, path: Path) -> Optional[Path]:
+        """在给定目录下查找主质检技能目录，兼容大小写和非固定目录名。"""
+        if not path.is_dir():
+            return None
+
+        preferred_names = ['BigPoi-verification-qc', 'bigpoi-verification-qc']
+        for name in preferred_names:
+            candidate = path / name
+            if cls._is_qc_skill_dir(candidate):
+                return candidate
+
+        for child in path.iterdir():
+            if cls._is_qc_skill_dir(child):
+                return child
+
+        return None
+
+    @staticmethod
     def _is_workspace_root(path: Path) -> bool:
         """判断是否为当前技能包的工作区根目录。"""
         return (
-            (path / 'BigPoi-verification-qc').is_dir()
+            FileLoader._find_qc_skill_dir_under(path) is not None
             and (path / 'qc-write-pg-qc').is_dir()
         )
 
@@ -109,14 +138,26 @@ class FileLoader:
 
     def _find_qc_skill_dir(self) -> Path:
         root_dir = self._find_root_dir()
-        candidates = [
-            root_dir / 'BigPoi-verification-qc',
-            Path(__file__).resolve().parent.parent.parent / 'BigPoi-verification-qc',
+        search_roots = [
+            root_dir,
+            Path(__file__).resolve().parent.parent.parent,
         ]
-        for candidate in candidates:
-            if candidate.is_dir():
+
+        for search_root in search_roots:
+            candidate = self._find_qc_skill_dir_under(search_root)
+            if candidate is not None:
                 return candidate
-        raise FileNotFoundError('未找到 BigPoi-verification-qc 目录，无法校验候选结果')
+
+        script_dir = Path(__file__).resolve().parent
+        for parent in [script_dir, *script_dir.parents]:
+            if self._is_qc_skill_dir(parent):
+                return parent
+
+        raise FileNotFoundError(
+            '未找到主质检技能目录，无法校验候选结果；需包含 '
+            'scripts/result_validator.py、scripts/result_contract.py、'
+            'schema/qc_result.schema.json、config/scoring_policy.json'
+        )
 
     def _load_module(self, cache_attr: str, module_name: str, module_path: Path):
         cached = getattr(self, cache_attr, None)

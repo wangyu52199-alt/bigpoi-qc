@@ -1,19 +1,19 @@
 ---
 name: qc-write-pg-qc
-description: 从本地化JSON文件读取大POI质检结果，回写到PostgreSQL指定表（v1.2.8 在回库前先收敛派生字段，再校验并写库）
+description: 从本地化JSON文件读取大POI质检结果，回写到PostgreSQL指定表（v1.2.9 回库时按目录结构定位主质检技能，不依赖固定目录名大小写）
 metadata:
-  version: "1.2.8"
+  version: "1.2.9"
   category: "quality-control"
   tags: ["qc", "database", "persistence"]
 ---
 
-# 大POI质检结果回库技能 v1.2.8
+# 大POI质检结果回库技能 v1.2.9
 
 ## 概述
 
 本技能从上游大POI质检技能本地化存储的JSON文件中读取质检结果，批量回写到PostgreSQL数据库的指定质检表，同时更新该表的质检相关字段（质检结论、评分、风险标识、统计标记）和状态为'已质检'。
 
-**v1.2.8 当前特性**：
+**v1.2.9 当前特性**：
 - 支持灵活指定目标表名，可向不同的表写入数据，默认表名为 `poi_qc_zk`
 - 保留索引缺失时的递归恢复能力，但恢复范围收敛到 `task_id` 目录
 - 重试产生多份结果时，优先选择“通过主质检校验”的最新结果
@@ -21,6 +21,7 @@ metadata:
 - 回库字段映射已对齐当前质检结果中的 `downgrade_consistency`
 - 回库前先调用主质检技能的 `result_contract.py` / `finalize_qc_result.py` 收敛派生字段，再执行 `result_validator.py` 校验
 - 当同时发现正式工作区输出和 `.claude/skills` 下的技能安装目录输出时，优先使用正式工作区结果
+- 加载主质检技能时按目录结构探测，不再依赖 `BigPoi-verification-qc` 固定目录名
 
 ### 主要特性
 
@@ -36,6 +37,7 @@ metadata:
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 1.2.9 | 2026-03-18 | 主质检技能目录定位改为结构探测，兼容 `BigPoi-verification-qc` / `bigpoi-verification-qc` 等不同目录名，修复服务器候选校验失败 |
 | 1.2.8 | 2026-03-17 | `task_id` 搜索时只把能通过主质检结果校验的文件视为合法候选；最新结果无效时，自动回退到较早但合法的结果 |
 | 1.2.7 | 2026-03-17 | 同步主质检技能的统计字段语义：`is_manual_required` 与 `qc_manual_review_required` 统一表示“QC 是否认为需要人工复核” |
 | 1.2.6 | 2026-03-17 | 回库前先统一收敛 `qc_score`、`qc_status`、`risk_dims`、`triggered_rules`、`statistics_flags` 等派生字段，再执行结果校验 |
