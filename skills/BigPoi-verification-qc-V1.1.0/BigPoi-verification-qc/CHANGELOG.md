@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## [2.3.9] - 2026-03-18
+
+### 调整
+- 调整 `poi_type_mapping.py` 的回退强度：当中文 `category` 至少确认大类、且名称层级规则确认到正确层级时，`fallback_support` 提升为 `strong`
+- 这使得类似 `130104 + 福海县人民政府 + 政府机关` 的场景可直接作为 `pass` 级类型回退支撑
+
+### 文档
+- 更新 `SKILL.md` 和 `rules/rules.yaml`，明确“大类匹配 + 名称层级匹配”可作为类型通过依据
+
+## [2.3.8] - 2026-03-18
+
+### 调整
+- 在 `scripts/poi_type_mapping.py` 中新增 `fallback_support` 汇总结果，统一收敛中文 `category` 和名称层级两类回退信号
+- 缺失 `typecode` 时，类型回退现在按 `strong / medium / weak / none` 四档支持强度输出
+
+### 文档
+- 更新 `SKILL.md` 和 `rules/rules.yaml`，明确缺失 `typecode` 时必须通过 `poi_type_mapping.py` 决定类型回退强度
+
+## [2.3.7] - 2026-03-18
+
+### 调整
+- 在 `scripts/poi_type_mapping.py` 中新增名称层级提取规则，支持从政府类名称中确定 `province / city / county / town`
+- 当前名称规则至少覆盖：`省人民政府`、`自治区人民政府`、`市人民政府`、`州人民政府`、`地区行政公署`、`县人民政府`、`区人民政府`、`乡人民政府`、`镇人民政府`
+
+### 文档
+- 更新 `SKILL.md` 和 `rules/rules.yaml`，明确缺失 `typecode` 时可使用中文 `category` 和名称层级规则做确定性回退
+
+## [2.3.6] - 2026-03-18
+
+### 调整
+- 将 `poi_type` 映射结构升级为“标准大类 + 层级/子类语义”，支持区分政府类 `province / city / county / town` 等层级
+- 调整 `scripts/poi_type_mapping.py`，在缺失 `typecode` 时可分别判断中文 `category` 是否命中大类别名、层级别名
+
+### 文档
+- 更新 `SKILL.md` 和 `rules/rules.yaml`，明确 `category` 维度必须拆成“大类一致”和“层级/子类一致”两层判断
+
 ## [2.3.5] - 2026-03-17
 
 ### 新增

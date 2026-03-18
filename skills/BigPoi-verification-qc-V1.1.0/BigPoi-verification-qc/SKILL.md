@@ -1,6 +1,6 @@
 ---
 name: bigpoi-verification-qc
-version: 2.3.5
+version: 2.3.9
 description:
   对上游大POI核实结果进行确定性质量检验，官方输入固定为上游平铺结构。重点检查名称、坐标、地址、行政区划、类型、存在性、证据充分性，以及人工核实降级是否一致。
   输出结构化、可审计、可复算的质检结果。
@@ -17,7 +17,7 @@ metadata:
   validators_path: ./scripts/result_validator.py
 -------------
 
-# QC Skill · Big POI Verification v2.3.5
+# QC Skill · Big POI Verification v2.3.9
 
 ## 1. 技能目标
 
@@ -289,12 +289,28 @@ metadata:
 
 - 优先使用 `evidence.data.raw_data.typecode`
 - 次优先使用 `evidence.data.raw_data.data.typecode`
-- 如果证据没有 `typecode`，必须读取 `./config/poi_type_mapping.json`，并通过 `./scripts/poi_type_mapping.py` 将输入 `poi_type` 映射到白名单类型，再和证据中文 `category` 做别名匹配
-- 只有类目中文名、没有 `typecode` 的证据，默认只能作为弱支撑；只有映射别名明确命中时，才允许作为有效回退支撑
+- 如果证据没有 `typecode`，必须读取 `./config/poi_type_mapping.json`，并通过 `./scripts/poi_type_mapping.py` 将输入 `poi_type` 解析成标准 `group` 和层级/子类语义，再和证据中文 `category` 做别名匹配
+- 如果证据没有 `typecode`，还可以使用证据 `name` 做确定性层级提取，当前至少支持：
+  - `.*省人民政府` / `.*自治区人民政府` / `直辖市人民政府` -> `government + province`
+  - `.*市人民政府` / `.*州人民政府` / `.*地区行政公署` -> `government + city`
+  - `.*县人民政府` / `.*区人民政府` -> `government + county`
+  - `.*乡人民政府` / `.*镇人民政府` -> `government + town`
+- 类型判断必须拆成两层：
+  - 第一层：大类 `group` 是否一致，例如都属于 `government`
+  - 第二层：层级或子类是否一致，例如 `province / city / county`
+- 当缺失 `typecode` 时，必须调用 `./scripts/poi_type_mapping.py`，并按返回的 `fallback_support.support_level` 决策：
+  - `strong`：中文 `category` 和名称层级同时命中；或“中文 `category` 至少确认大类 + 名称层级确认同层级” -> 可作为 `pass` 级回退支撑
+  - `medium`：中文 `category` 或名称层级单独命中层级 -> 作为 `risk` 或边界 `pass` 支撑
+  - `weak`：只能确认大类一致、无法确认层级 -> 只能判 `risk`
+  - `none`：没有可用回退语义支撑
+- 只有类目中文名、没有 `typecode` 的证据，默认不能直接替代 `typecode`
 - 没有可用 `typecode` 证据 -> `fail`
 - `typecode` 与 `poi_type` 直接冲突 -> `fail`
 - 仅有单条 `typecode` 精确匹配证据但置信度不足 -> `risk`
-- 没有 `typecode`，但中文 `category` 与映射别名命中 -> `risk`
+- 没有 `typecode`，但中文 `category` 与映射别名命中，且只能确认大类一致、无法确认层级/子类 -> `risk`
+- 没有 `typecode`，但中文 `category` 与映射别名同时命中大类和层级/子类 -> 可视为正确匹配
+- 没有 `typecode`，但名称层级规则同时命中大类和层级/子类 -> 可视为正确匹配
+- 没有 `typecode`，但“中文 `category` 仅命中大类 + 名称层级规则命中正确层级/子类” -> 也可视为正确匹配
 - 有高置信度 `typecode` 精确匹配，或多条 `typecode` 精确匹配 -> `pass`
 
 ### 7.7 `evidence_sufficiency`

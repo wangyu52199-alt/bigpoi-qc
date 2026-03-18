@@ -1,5 +1,5 @@
-version: 2.3.5
-description: BigPOI QC deterministic rule registry v2.3.5
+version: 2.3.9
+description: BigPOI QC deterministic rule registry v2.3.9
 
 rules:
   - id: R1
@@ -36,7 +36,7 @@ rules:
     name: 类型一致性检查
     dimension: category
     severity: medium
-    description: 优先基于输入 poi_type 与证据 typecode 的精确匹配；缺失 typecode 时使用 poi_type 映射配置匹配中文 category 别名
+    description: 优先基于输入 poi_type 与证据 typecode 的精确匹配；缺失 typecode 时允许“中文 category 确认大类 + 名称层级确认层级”作为 pass 级确定性回退
 
   - id: R7
     name: 人工核实一致性检查
