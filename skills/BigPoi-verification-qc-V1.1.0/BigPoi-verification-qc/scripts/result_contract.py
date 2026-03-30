@@ -14,6 +14,12 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from poi_type_mapping import evaluate_fallback_support, load_mapping
+except Exception:  # pragma: no cover - optional runtime dependency
+    evaluate_fallback_support = None
+    load_mapping = None
+
 
 CORE_DIMENSIONS = (
     'existence',
@@ -27,6 +33,8 @@ REVIEW_DIMENSIONS = ('evidence_sufficiency',)
 ALL_DIMENSIONS = CORE_DIMENSIONS + REVIEW_DIMENSIONS + ('downgrade_consistency',)
 RISK_STATUSES = {'risk', 'fail'}
 AUTHORITATIVE_SOURCE_TYPES = {'business_license', 'official_registry', 'government', 'official_data'}
+FALLBACK_SUPPORT_LEVELS = {'strong', 'medium', 'weak', 'none', 'conflict'}
+_POI_TYPE_MAPPING_CACHE: Optional[Dict[str, Any]] = None
 
 RULE_METADATA = {
     'R1': {
@@ -156,6 +164,13 @@ def _evidence_source_type(evidence: Dict[str, Any]) -> str:
     return str(source.get('source_type') or '').strip()
 
 
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _copy_present(mapping: Dict[str, Any], keys: List[str]) -> Dict[str, Any]:
     result: Dict[str, Any] = {}
     for key in keys:
@@ -183,6 +198,72 @@ def _extract_typecode(data: Dict[str, Any]) -> Optional[Any]:
     if isinstance(nested_raw, dict) and nested_raw.get('typecode') is not None:
         return nested_raw.get('typecode')
     return raw_data.get('typecode')
+
+
+def _get_poi_type_mapping() -> Optional[Dict[str, Any]]:
+    global _POI_TYPE_MAPPING_CACHE
+    if _POI_TYPE_MAPPING_CACHE is not None:
+        return _POI_TYPE_MAPPING_CACHE
+    if load_mapping is None:
+        return None
+    try:
+        _POI_TYPE_MAPPING_CACHE = load_mapping()
+    except Exception:
+        _POI_TYPE_MAPPING_CACHE = None
+    return _POI_TYPE_MAPPING_CACHE
+
+
+def _normalize_support_level(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in FALLBACK_SUPPORT_LEVELS:
+        return normalized
+    return None
+
+
+def _inject_category_fallback_support(evidence: Dict[str, Any], poi_type_hint: Optional[str]) -> None:
+    if not isinstance(evidence, dict):
+        return
+    if not poi_type_hint:
+        return
+
+    data = evidence.get('data')
+    if not isinstance(data, dict):
+        return
+    if _extract_typecode(data) is not None:
+        return
+
+    matching = evidence.get('matching')
+    if not isinstance(matching, dict):
+        matching = {}
+
+    existing_level = _normalize_support_level(matching.get('category_fallback_support'))
+    if existing_level is not None:
+        matching['category_fallback_support'] = existing_level
+        evidence['matching'] = matching
+        return
+
+    if evaluate_fallback_support is None:
+        matching['category_fallback_support'] = 'none'
+        evidence['matching'] = matching
+        return
+
+    mapping = _get_poi_type_mapping()
+    if not isinstance(mapping, dict):
+        matching['category_fallback_support'] = 'none'
+        evidence['matching'] = matching
+        return
+
+    fallback = evaluate_fallback_support(
+        poi_type_hint,
+        data.get('category'),
+        data.get('name'),
+        mapping,
+    )
+    support_level = _normalize_support_level((fallback or {}).get('support_level')) or 'none'
+    matching['category_fallback_support'] = support_level
+    evidence['matching'] = matching
 
 
 def _build_location_payload(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -215,7 +296,11 @@ def _build_location_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     return location_payload
 
 
-def _project_evidence_item(dim_name: str, evidence: Dict[str, Any]) -> Dict[str, Any]:
+def _project_evidence_item(
+    dim_name: str,
+    evidence: Dict[str, Any],
+    poi_type_hint: Optional[str] = None,
+) -> Dict[str, Any]:
     projected: Dict[str, Any] = {}
     if evidence.get('evidence_id') is not None:
         projected['evidence_id'] = evidence.get('evidence_id')
@@ -236,6 +321,11 @@ def _project_evidence_item(dim_name: str, evidence: Dict[str, Any]) -> Dict[str,
 
     matching = evidence.get('matching')
     data = evidence.get('data')
+    if dim_name == 'category':
+        enriched = copy.deepcopy(evidence)
+        _inject_category_fallback_support(enriched, poi_type_hint)
+        matching = enriched.get('matching')
+        data = enriched.get('data')
     if not isinstance(data, dict):
         data = {}
 
@@ -266,6 +356,9 @@ def _project_evidence_item(dim_name: str, evidence: Dict[str, Any]) -> Dict[str,
         if isinstance(administrative, dict):
             city = administrative.get('city')
         projected_data = {'administrative': {'city': city}} if city is not None else {}
+        name = data.get('name')
+        if name is not None:
+            projected_data['name'] = name
         address = _first_non_empty(
             data.get('address'),
             data.get('location', {}).get('address') if isinstance(data.get('location'), dict) else None,
@@ -280,6 +373,10 @@ def _project_evidence_item(dim_name: str, evidence: Dict[str, Any]) -> Dict[str,
             projected_data['category'] = category
         if typecode is not None:
             projected_data['raw_data'] = {'typecode': typecode}
+        if isinstance(matching, dict):
+            projected_matching = _copy_present(matching, ['category_match', 'category_fallback_support'])
+            if projected_matching:
+                projected['matching'] = projected_matching
     elif dim_name == 'evidence_sufficiency':
         projected_data = {}
     else:
@@ -291,14 +388,18 @@ def _project_evidence_item(dim_name: str, evidence: Dict[str, Any]) -> Dict[str,
     return projected
 
 
-def _project_dimension_evidence(dim_name: str, evidence_items: Any) -> List[Dict[str, Any]]:
+def _project_dimension_evidence(
+    dim_name: str,
+    evidence_items: Any,
+    poi_type_hint: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     if not isinstance(evidence_items, list):
         return []
     projected_items = []
     for item in evidence_items:
         if not isinstance(item, dict):
             continue
-        projected_item = _project_evidence_item(dim_name, item)
+        projected_item = _project_evidence_item(dim_name, item, poi_type_hint=poi_type_hint)
         if projected_item:
             projected_items.append(projected_item)
     return _dedupe_evidence_items(projected_items)
@@ -342,6 +443,173 @@ def derive_overall_explanation(
         parts.append("核心事实维度全部通过。")
 
     return ' '.join(parts)
+
+
+def _extract_location_distances(evidence_items: List[Dict[str, Any]]) -> List[float]:
+    distances: List[float] = []
+    for item in evidence_items:
+        if not isinstance(item, dict):
+            continue
+        matching = item.get('matching')
+        if not isinstance(matching, dict):
+            continue
+        distance = _safe_float(matching.get('location_distance'))
+        if distance is None:
+            continue
+        if distance < 0:
+            continue
+        distances.append(distance)
+    return distances
+
+
+def _extract_confidences(evidence_items: List[Dict[str, Any]]) -> List[float]:
+    values: List[float] = []
+    for item in evidence_items:
+        if not isinstance(item, dict):
+            continue
+        value = _evidence_confidence(item)
+        if value > 0:
+            values.append(value)
+    return values
+
+
+def _extract_addresses(evidence_items: List[Dict[str, Any]]) -> List[str]:
+    addresses: List[str] = []
+    for item in evidence_items:
+        if not isinstance(item, dict):
+            continue
+        data = item.get('data')
+        if not isinstance(data, dict):
+            continue
+        address = data.get('address')
+        if not isinstance(address, str) or not address.strip():
+            continue
+        addresses.append(address.strip())
+    return addresses
+
+
+def _normalize_address_for_compare(text: str) -> str:
+    normalized = text.strip().lower()
+    replacements = {
+        '（': '(',
+        '）': ')',
+        '，': ',',
+        '。': '.',
+        '　': '',
+        ' ': '',
+    }
+    for src, dst in replacements.items():
+        normalized = normalized.replace(src, dst)
+    for token in ('省', '市', '区', '县', '镇', '乡', '街道'):
+        normalized = normalized.replace(token, '')
+    normalized = normalized.replace('人民西路', '人民路')
+    normalized = normalized.replace('国道', 'g')
+    normalized = normalized.replace('大道', '路')
+    return normalized
+
+
+def _are_addresses_semantically_consistent(addresses: List[str]) -> bool:
+    if len(addresses) <= 1:
+        return True
+    normalized = [_normalize_address_for_compare(item) for item in addresses if item]
+    if not normalized:
+        return True
+    base = normalized[0]
+    for candidate in normalized[1:]:
+        if candidate == base:
+            continue
+        # 允许包含关系，兼容“完整地址 vs 简写地址”
+        if candidate in base or base in candidate:
+            continue
+        return False
+    return True
+
+
+def _apply_location_semantic_adjustment(dimension_results: Dict[str, Any]) -> None:
+    dim_result = dimension_results.get('location')
+    if not isinstance(dim_result, dict):
+        return
+    if dim_result.get('status') != 'risk':
+        return
+
+    evidence = dim_result.get('evidence')
+    if not isinstance(evidence, list):
+        return
+
+    distances = _extract_location_distances(evidence)
+    if len(distances) < 3:
+        return
+
+    close_count = sum(1 for distance in distances if distance <= 200)
+    mid_count = sum(1 for distance in distances if 200 < distance <= 500)
+    far_count = sum(1 for distance in distances if distance > 500)
+
+    # 稳健规则：允许单个中距离离群点，不允许 >500m 的硬离群。
+    if far_count > 0:
+        return
+    if close_count < 2 or mid_count != 1:
+        return
+
+    confidences = _extract_confidences(evidence)
+    confidence = round(sum(confidences) / len(confidences), 4) if confidences else 0.85
+    dim_result['status'] = 'pass'
+    dim_result['risk_level'] = 'none'
+    dim_result['confidence'] = max(confidence, 0.85)
+    dim_result['explanation'] = (
+        '坐标通过：检测到单个离群坐标证据，其余多数有效证据在 200 米内，按稳健规则判定坐标一致。'
+    )
+
+
+def _apply_address_semantic_adjustment(dimension_results: Dict[str, Any]) -> None:
+    dim_result = dimension_results.get('address')
+    if not isinstance(dim_result, dict):
+        return
+    if dim_result.get('status') != 'risk':
+        return
+
+    evidence = dim_result.get('evidence')
+    if not isinstance(evidence, list) or not evidence:
+        return
+
+    explanation = _trim_explanation(dim_result.get('explanation'))
+    soft_risk_keywords = (
+        '软匹配',
+        '别名',
+        '门牌缺失',
+        '仅有单条精确匹配但置信度不足',
+        '单条精确匹配但置信度不足',
+        '主地址',
+        '前缀',
+    )
+    if not any(keyword in explanation for keyword in soft_risk_keywords):
+        return
+
+    confidences = _extract_confidences(evidence)
+    max_confidence = max(confidences) if confidences else 0.0
+    # 对“仅前缀差异（如省市区/镇街道）+ 主地址一致”场景放宽阈值，避免误判为风险。
+    prefix_only_hints = ('主地址', '前缀', '省市区', '镇街道')
+    required_confidence = 0.75 if any(hint in explanation for hint in prefix_only_hints) else 0.85
+    if max_confidence < required_confidence:
+        return
+
+    addresses = _extract_addresses(evidence)
+    if not _are_addresses_semantically_consistent(addresses):
+        return
+
+    dim_result['status'] = 'pass'
+    dim_result['risk_level'] = 'none'
+    dim_result['confidence'] = round(max(max_confidence, required_confidence), 4)
+    if required_confidence < 0.85:
+        dim_result['explanation'] = '地址通过：仅存在行政区/镇街道前缀差异，主地址语义一致，判定地址一致。'
+    else:
+        dim_result['explanation'] = '地址通过：软匹配证据语义一致，且存在高置信度支持，判定地址一致。'
+
+
+def apply_semantic_adjustments(dimension_results: Dict[str, Any]) -> Dict[str, Any]:
+    adjusted = copy.deepcopy(dimension_results)
+    _apply_location_semantic_adjustment(adjusted)
+    _apply_address_semantic_adjustment(adjusted)
+    return adjusted
 
 
 def _collect_supporting_evidence(dimension_results: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -446,8 +714,34 @@ def _default_downgrade_explanation(qc_manual: bool, upstream_manual: bool) -> st
     return '降级一致性失败：上游执行了人工核实，但 QC 认为无需人工核实。'
 
 
-def normalize_dimension_results(dimension_results: Dict[str, Any]) -> Dict[str, Any]:
+def _recompute_downgrade_consistency(dimension_results: Dict[str, Any]) -> None:
+    consistency = dimension_results.get('downgrade_consistency')
+    if not isinstance(consistency, dict):
+        return
+
+    qc_manual = derive_qc_manual_review_required(dimension_results)
+    consistency['qc_manual_review_required'] = qc_manual
+
+    upstream_manual_raw = consistency.get('upstream_manual_review_required')
+    upstream_manual = upstream_manual_raw if isinstance(upstream_manual_raw, bool) else False
+    consistency['upstream_manual_review_required'] = upstream_manual
+    is_consistent = qc_manual == upstream_manual
+    consistency['is_consistent'] = is_consistent
+    consistency['issue_type'] = derive_downgrade_issue_type(qc_manual, upstream_manual)
+    consistency['status'] = 'pass' if is_consistent else 'fail'
+    consistency['risk_level'] = 'none' if is_consistent else 'high'
+    consistency['explanation'] = _default_downgrade_explanation(qc_manual, upstream_manual)
+    consistency['related_rules'] = ['R7']
+
+
+def normalize_dimension_results(
+    dimension_results: Dict[str, Any],
+    poi_type_hint: Optional[Any] = None,
+) -> Dict[str, Any]:
     normalized = copy.deepcopy(dimension_results or {})
+    poi_type_text = str(poi_type_hint).strip() if poi_type_hint is not None else ''
+    if not poi_type_text:
+        poi_type_text = None
 
     normalized['evidence_sufficiency'] = _derive_evidence_sufficiency(normalized)
 
@@ -470,24 +764,15 @@ def normalize_dimension_results(dimension_results: Dict[str, Any]) -> Dict[str, 
         if default_rule_id and not related_rules:
             related_rules = [default_rule_id]
         dim_result['related_rules'] = related_rules
-        dim_result['evidence'] = _project_dimension_evidence(dim_name, dim_result.get('evidence'))
+        dim_result['evidence'] = _project_dimension_evidence(
+            dim_name,
+            dim_result.get('evidence'),
+            poi_type_hint=poi_type_text,
+        )
 
-    consistency = normalized.get('downgrade_consistency')
-    if isinstance(consistency, dict):
-        qc_manual = derive_qc_manual_review_required(normalized)
-        consistency['qc_manual_review_required'] = qc_manual
-
-        upstream_manual = consistency.get('upstream_manual_review_required')
-        if isinstance(upstream_manual, bool):
-            is_consistent = qc_manual == upstream_manual
-            consistency['is_consistent'] = is_consistent
-            consistency['issue_type'] = derive_downgrade_issue_type(qc_manual, upstream_manual)
-            consistency['status'] = 'pass' if is_consistent else 'fail'
-            consistency['risk_level'] = 'none' if is_consistent else 'high'
-            consistency['explanation'] = _default_downgrade_explanation(qc_manual, upstream_manual)
-        consistency['related_rules'] = ['R7']
-
-    return normalized
+    adjusted = apply_semantic_adjustments(normalized)
+    _recompute_downgrade_consistency(adjusted)
+    return adjusted
 
 
 def derive_risk_dims(dimension_results: Dict[str, Any]) -> List[str]:
@@ -585,15 +870,22 @@ def derive_statistics_flags(dimension_results: Dict[str, Any], qc_status: Option
     resolved_qc_status = qc_status or derive_qc_status(dimension_results)
     qc_manual = derive_qc_manual_review_required(dimension_results)
     consistency_result = dimension_results.get('downgrade_consistency', {})
+    consistency_status = _dimension_status(dimension_results, 'downgrade_consistency')
     upstream_manual = None
     issue_type = None
     if isinstance(consistency_result, dict):
         upstream_manual = consistency_result.get('upstream_manual_review_required')
         issue_type = consistency_result.get('issue_type')
 
+    # 运营侧自动放行仍需考虑与上游降级一致性，避免“状态通过但降级冲突”直接放行。
+    is_auto_approvable = (
+        resolved_qc_status == 'qualified'
+        and consistency_status not in RISK_STATUSES
+    )
+
     return {
         'is_qualified': resolved_qc_status == 'qualified',
-        'is_auto_approvable': resolved_qc_status == 'qualified',
+        'is_auto_approvable': is_auto_approvable,
         'is_manual_required': qc_manual,
         'qc_manual_review_required': qc_manual,
         'upstream_manual_review_required': upstream_manual,
@@ -605,9 +897,17 @@ def finalize_qc_result(
     qc_result: Dict[str, Any],
     scoring_policy: Optional[Dict[str, Any]] = None,
     scoring_policy_path: Optional[str] = None,
+    poi_type_hint: Optional[Any] = None,
 ) -> Dict[str, Any]:
     finalized = copy.deepcopy(qc_result or {})
-    normalized_dimensions = normalize_dimension_results(finalized.get('dimension_results', {}))
+    resolved_poi_type_hint = poi_type_hint
+    if resolved_poi_type_hint is None:
+        resolved_poi_type_hint = finalized.get('poi_type')
+    finalized.pop('poi_type', None)
+    normalized_dimensions = normalize_dimension_results(
+        finalized.get('dimension_results', {}),
+        poi_type_hint=resolved_poi_type_hint,
+    )
     finalized['dimension_results'] = normalized_dimensions
 
     resolved_scoring_policy = scoring_policy or load_scoring_policy(scoring_policy_path)

@@ -1,6 +1,6 @@
 ---
 name: bigpoi-verification-qc
-version: 2.3.10
+version: 2.3.14
 description:
   对上游大POI核实结果进行确定性质量检验，官方输入固定为上游平铺结构。重点检查名称、坐标、地址、行政区划、类型、存在性、证据充分性，以及人工核实降级是否一致。
   输出结构化、可审计、可复算的质检结果。
@@ -10,6 +10,7 @@ metadata:
   config_path: ./config
   poi_type_mapping_path: ./config/poi_type_mapping.json
   poi_type_mapping_script: ./scripts/poi_type_mapping.py
+  category_fallback_injector_path: ./scripts/inject_category_fallback.py
   contracts_path: ./scripts/result_contract.py
   finalizers_path: ./scripts/finalize_qc_result.py
   persisters_path: ./scripts/result_persister.py
@@ -17,7 +18,7 @@ metadata:
   validators_path: ./scripts/result_validator.py
 -------------
 
-# QC Skill · Big POI Verification v2.3.10
+# QC Skill · Big POI Verification v2.3.14
 
 ## 1. 技能目标
 
@@ -49,11 +50,12 @@ metadata:
 5. `./config/scoring_policy.json`
 6. `./config/poi_type_mapping.json`
 7. `./scripts/poi_type_mapping.py`
-8. `./scripts/result_contract.py`
-9. `./scripts/finalize_qc_result.py`
-10. `./scripts/result_validator.py`
-11. `./scripts/dsl_validator.py`
-12. `./scripts/result_persister.py`
+8. `./scripts/inject_category_fallback.py`
+9. `./scripts/result_contract.py`
+10. `./scripts/finalize_qc_result.py`
+11. `./scripts/result_validator.py`
+12. `./scripts/dsl_validator.py`
+13. `./scripts/result_persister.py`
 
 仅作辅助参考：
 
@@ -92,8 +94,9 @@ metadata:
 - `y_coord`
 - `poi_type`
 - `evidence_record`
-- `verify_info`
 - `verify_result`
+
+`verify_info` 允许存在于输入中，但只可作为追溯字段保留，禁止参与任何维度判定、风险解释和证据选择。
 
 规则执行时直接读取这些平铺字段，不允许再做结构归一化。允许的预处理只有两类：
 
@@ -116,7 +119,7 @@ metadata:
 
 - `verify_result = "核实通过"` -> `upstream_manual_review_required = false`
 - `verify_result = "需人工核实"` 或 `verify_result = "需要人工核实"` -> `upstream_manual_review_required = true`
-- 其他值 -> `downgrade_consistency` 记为 `unresolved`
+- 其他值 -> `upstream_manual_review_required = false`（默认按“未降级”处理，禁止输出 `unresolved`）
 
 ## 4. 必须执行的完整性检查
 
@@ -173,7 +176,7 @@ metadata:
 必须严格按以下顺序执行：
 
 1. 直接读取平铺输入字段
-2. 对 `evidence_record` 执行无效证据过滤与 `source_type` 统一
+2. 对 `evidence_record` 执行无效证据过滤与 `source_type` 统一，并调用 `./scripts/inject_category_fallback.py` 自动补齐 `matching.category_fallback_support`
 3. 仅对平铺输入执行完整性检查
 4. 判定 6 个事实维度：`existence`、`name`、`location`、`address`、`administrative`、`category`
 5. 基于事实维度证据和来源质量，判定 `evidence_sufficiency`
@@ -188,6 +191,7 @@ metadata:
 
 - 创建任何临时 Python 脚本，例如 `run_qc.py`、`temp_qc_processor.py`
 - 创建或依赖任何结构归一化步骤
+- 使用 `verify_info.*` 参与任何维度判定、解释或 evidence 组装
 - 手写结果文件路径或文件名
 - 手工计算或手工拼装 `qc_score`、`qc_status`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags`
 - 手工编写顶层 `explanation`
@@ -242,6 +246,7 @@ metadata:
 `name` 只判断名称是否与证据中的目标实体一致。
 
 - 强支持阈值：`name_similarity >= 0.85`
+- 高置信强支持阈值：`name_similarity >= 0.85` 且 `confidence >= 0.85`
 - 中等相似度区间：`0.60-0.84`
 - 低于 `0.60` 视为硬冲突
 - 无有效名称证据、或全部相似度低于 `0.60` -> `fail`
@@ -263,7 +268,8 @@ metadata:
 `address` 单独比较地址文本。
 
 - 只看输入 `address` 与证据 `data.address`
-- 精确支持：道路主干和门牌号都一致；允许省市区前缀省略，不允许改写真实道路或门牌
+- 精确支持：道路主干和门牌号都一致；允许省市区及镇街道前缀省略，不允许改写真实道路或门牌
+- 如果证据地址仅比输入地址多了行政区/镇街道等前缀（例如 `东城路61号` vs `广东省东莞市东城街道东城路61号`），应视为可通过支持，不得机械判为软匹配风险
 - 软匹配：道路一致但门牌缺失、门牌一致但道路别名不同，或出现类似 `人民路 / 人民西路` 的可疑差异
 - 硬冲突：城市级别冲突，或门牌号直接冲突
 - 无有效地址证据、或发生硬冲突 -> `fail`
@@ -273,15 +279,15 @@ metadata:
 
 ### 7.5 `administrative`
 
-`administrative` 只判断输入 `city` 与证据 `administrative.city` 是否一致。
+`administrative` 以输入 `city` 为目标，优先使用结构化 `administrative.city`，在结构化字段缺失时允许用地址/名称/原始城市字段做补充推断。
 
-- 只看 `city`
-- 不得读取地址字段，不得从地址里反推行政区划
-- 例外：官方或权威来源地址中明确包含输入 `city` 时，可作为补充弱支持，但不能单独制造冲突，也不能替代结构化 `city` 成为唯一强证据
-- 无有效 `city` 证据，或证据 `city` 与输入 `city` 直接冲突 -> `fail`
-- 缺少结构化 `city` 证据、但官方或权威来源地址中包含输入 `city` -> `risk`
-- 只有单条 `city` 一致证据且置信度不足，且没有官方/权威地址弱支持 -> `risk`
-- 多条 `city` 一致证据，或单条高置信度 `city` 一致证据，或“单条结构化 `city` 一致证据 + 官方/权威地址弱支持” -> `pass`
+- 主判定字段：`evidence.data.administrative.city`
+- 补充推断字段：`evidence.data.address`、`evidence.data.name`、`evidence.data.raw_data.cityname`、`evidence.data.raw_data.data.cityname`
+- 结构化 `city` 与输入 `city` 直接冲突 -> `fail`
+- 结构化 `city` 缺失，但补充推断字段可稳定支持输入 `city` 且无结构化冲突 -> `pass`
+- 仅有单条结构化 `city` 一致证据且置信度不足，同时不存在补充推断支持 -> `risk`
+- 多条结构化 `city` 一致证据，或单条高置信结构化 `city` 一致证据，或“结构化一致 + 补充推断支持” -> `pass`
+- 无结构化 `city` 证据且无补充推断支持 -> `fail`
 
 ### 7.6 `category`
 
@@ -289,7 +295,9 @@ metadata:
 
 - 优先使用 `evidence.data.raw_data.typecode`
 - 次优先使用 `evidence.data.raw_data.data.typecode`
+- 当缺失 `typecode` 时，必须执行语义回退，不允许直接 `fail`
 - 如果证据没有 `typecode`，必须读取 `./config/poi_type_mapping.json`，并通过 `./scripts/poi_type_mapping.py` 将输入 `poi_type` 解析成标准 `group` 和层级/子类语义，再和证据中文 `category` 做别名匹配
+- 当证据缺失 `typecode` 且未给出 `matching.category_fallback_support` 时，必须优先调用 `./scripts/inject_category_fallback.py` 自动回填，禁止手工逐条拼接
 - 如果证据没有 `typecode`，还可以使用证据 `name` 做确定性层级提取，当前至少支持：
   - `.*省人民政府` / `.*自治区人民政府` / `直辖市人民政府` -> `government + province`
   - `.*市人民政府` / `.*州人民政府` / `.*地区行政公署` -> `government + city`
@@ -299,12 +307,13 @@ metadata:
   - 第一层：大类 `group` 是否一致，例如都属于 `government`
   - 第二层：层级或子类是否一致，例如 `province / city / county`
 - 当缺失 `typecode` 时，必须调用 `./scripts/poi_type_mapping.py`，并按返回的 `fallback_support.support_level` 决策：
+  - 必须将 `fallback_support.support_level` 回写到 `evidence.matching.category_fallback_support`（值域：`strong|medium|weak|none|conflict`），供 DSL 稳定消费
   - `strong`：中文 `category` 和名称层级同时命中；或“中文 `category` 至少确认大类 + 名称层级确认同层级” -> 可作为 `pass` 级回退支撑
   - `medium`：中文 `category` 或名称层级单独命中层级 -> 作为 `risk` 或边界 `pass` 支撑
   - `weak`：只能确认大类一致、无法确认层级 -> 只能判 `risk`
   - `none`：没有可用回退语义支撑
 - 只有类目中文名、没有 `typecode` 的证据，默认不能直接替代 `typecode`
-- 没有可用 `typecode` 证据 -> `fail`
+- 没有可用 `typecode` 且也没有任何语义回退支持 -> `fail`
 - `typecode` 与 `poi_type` 直接冲突 -> `fail`
 - 仅有单条 `typecode` 精确匹配证据但置信度不足 -> `risk`
 - 没有 `typecode`，但中文 `category` 与映射别名命中，且只能确认大类一致、无法确认层级/子类 -> `risk`
@@ -312,6 +321,7 @@ metadata:
 - 没有 `typecode`，但名称层级规则同时命中大类和层级/子类 -> 可视为正确匹配
 - 没有 `typecode`，但“中文 `category` 仅命中大类 + 名称层级规则命中正确层级/子类” -> 也可视为正确匹配
 - 有高置信度 `typecode` 精确匹配，或多条 `typecode` 精确匹配 -> `pass`
+- 无 `typecode` 但语义回退为 `strong`（例如：`category` 确认大类 + 名称层级确认正确层级）-> `pass`
 
 ### 7.7 `evidence_sufficiency`
 
@@ -334,14 +344,13 @@ metadata:
 
 - `核实通过` -> `false`
 - `需人工核实` / `需要人工核实` -> `true`
-- 其他值 -> `unresolved`
+- 其他值 -> `false`（默认按“上游未降级”处理）
 
 对比逻辑：
 
 - 两者相同 -> `pass`
 - QC 需要人工核实但上游未降级 -> `fail` + `issue_type = "missed_downgrade"`
 - QC 不需要人工核实但上游降级 -> `fail` + `issue_type = "unnecessary_downgrade"`
-- 无法可靠推导上游人工核实信号 -> `risk`
 
 ## 8. 评分规则
 

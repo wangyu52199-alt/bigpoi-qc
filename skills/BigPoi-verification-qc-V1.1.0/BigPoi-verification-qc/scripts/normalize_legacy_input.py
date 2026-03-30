@@ -364,14 +364,6 @@ def _normalize_upstream_dimension(value: Any) -> Dict[str, Any]:
 
 
 def _derive_record_existence(payload: Dict[str, Any]) -> bool:
-    verify_info = _copy_json_dict(payload.get('verify_info'))
-    existence_info = _copy_json_dict(verify_info.get('existence'))
-    existence_result = _normalize_dimension_result(existence_info.get('result'))
-    if existence_result == 'pass':
-        return True
-    if existence_result == 'fail':
-        return False
-
     poi_status = payload.get('poi_status')
     if poi_status in (0, '0', False):
         return False
@@ -383,6 +375,8 @@ def _derive_record_existence(payload: Dict[str, Any]) -> bool:
     ).lower()
     if any(keyword in signal_text for keyword in REJECT_KEYWORDS):
         return False
+    if any(keyword in signal_text for keyword in PASS_KEYWORDS):
+        return True
     return True
 
 
@@ -488,8 +482,6 @@ def _derive_administrative(payload: Dict[str, Any], evidence_data: Iterable[Dict
 
 
 def _build_upstream_decision(payload: Dict[str, Any]) -> Dict[str, Any]:
-    verify_info = _copy_json_dict(payload.get('verify_info'))
-
     signal_text = ' '.join(
         str(_first_non_empty(payload.get('verify_result'), payload.get('quality_status'), '')).split()
     ).lower()
@@ -509,7 +501,16 @@ def _build_upstream_decision(payload: Dict[str, Any]) -> Dict[str, Any]:
     dimensions = {}
     confidences = []
     for dim_name in REQUIRED_UPSTREAM_DIMS:
-        normalized = _normalize_upstream_dimension(verify_info.get(dim_name))
+        normalized = {
+            'result': 'uncertain',
+            'confidence': 0.5,
+            'score': 0.5,
+            'evidence_refs': [],
+            'details': {
+                'source': 'verify_info_ignored',
+                'reason': 'upstream dimensions are no longer derived from verify_info',
+            },
+        }
         dimensions[dim_name] = normalized
         confidences.append(normalized['confidence'])
 

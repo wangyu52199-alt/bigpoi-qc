@@ -1,5 +1,69 @@
 # CHANGELOG
 
+## [2.3.14] - 2026-03-30
+
+### 修复
+- 统一 `downgrade_consistency` 的输出语义，移除 `unresolved` 输出通道：
+- `SKILL.md` 与 `rules/decision_tables.json` 同步为布尔口径：`verify_result` 非标准值默认按 `upstream_manual_review_required=false` 处理
+- 删除 `R7` 中 `downgrade_risk_unresolved_signal` 分支，避免产出与 `schema/qc_result.schema.json` 不兼容的降级状态
+- `scripts/result_contract.py` 在收敛阶段强制修正 `downgrade_consistency`：当 `upstream_manual_review_required` 非布尔时兜底为 `false`，并重算 `status/risk_level/is_consistent/issue_type/explanation`
+
+### 新增
+- 新增 `scripts/inject_category_fallback.py`：
+- 面向平铺输入自动补齐 `evidence_record[].matching.category_fallback_support`
+- 仅在证据缺失 `typecode` 时触发，使用 `poi_type + category + name` 经 `poi_type_mapping.py` 计算 `strong/medium/weak/none`
+
+### 调整
+- `scripts/result_contract.py` 在 `category` 维度证据投影前增加自动补齐逻辑：
+- 当缺失 `matching.category_fallback_support` 且提供了 `poi_type` 上下文时，自动注入回退强度
+- `scripts/finalize_qc_result.py` 新增 `--poi-type` 参数，用于在 finalize 阶段显式传入类型上下文
+- `SKILL.md` 升级至 `v2.3.14`，执行流程新增 `inject_category_fallback.py`，并明确禁止输出 `unresolved`
+
+## [2.3.13] - 2026-03-30
+
+### 调整
+- 调整 `rules/decision_tables.json`：
+- `R2(name)` 高置信强支持阈值由 `name_similarity >= 0.95` 下调为 `>= 0.85`（仍要求 `confidence >= 0.85`）
+- `R5(administrative)` 新增“补充推断 city”指标（地址/名称/raw cityname），支持在结构化 `city` 缺失时判定 `pass`
+- `R6(category)` 新增语义回退指标（`category_fallback_support` 的 `strong/medium/weak/conflict`），缺失 `typecode` 时不再直接失败，允许按回退强度判定 `pass/risk/fail`
+- `R4(address)` 新增 `main_address_only_support_count`，将“仅行政区/镇街道前缀差异、主道路和门牌一致”的场景从 `risk` 提升为 `pass`
+
+### 代码
+- 更新 `scripts/result_contract.py` 的证据投影：
+- `administrative` 维度输出中增加 `name`，用于展示行政区划补充推断依据
+- `category` 维度输出中增加 `matching.category_fallback_support`，用于展示类型语义回退依据
+- 调整 `scripts/result_contract.py` 地址语义修正阈值：命中“主地址/前缀差异”场景时放宽置信度门槛，避免将纯前缀差异误判为 `risk`
+
+### 文档
+- 更新 `SKILL.md` 至 `v2.3.13`，同步以上规则口径（行政区划补充推断、类型语义回退、名称高置信阈值）
+
+## [2.3.12] - 2026-03-30
+
+### 调整
+- 调整 `scripts/normalize_legacy_input.py`，移除 `verify_info` 对标准输入构造的影响：
+- `record.existence` 不再读取 `verify_info.existence`，仅基于 `poi_status` 与 `verify_result` 信号推导
+- `upstream_decision.dimensions` 不再由 `verify_info` 填充，统一输出 `uncertain` 占位，避免下游误用
+
+### 修复
+- 修复 `scripts/result_contract.py` 中 `downgrade_consistency` 计算时机问题：先完成语义修正，再重算降级一致性，避免出现“核心维度已修正为 `pass` 但降级一致性仍为旧值 `fail`”的状态错位
+- 明确 `qc_status` 聚合继续纳入 `downgrade_consistency` 风险：当降级一致性为 `risk/fail` 时，整体 `qc_status` 为 `risky`
+
+### 文档
+- 更新 `SKILL.md` 与输入 schema，明确 `verify_info` 仅用于追溯，禁止参与 QC 判定、解释和证据选择
+
+## [2.3.11] - 2026-03-30
+
+### 调整
+- 在 `scripts/result_contract.py` 新增软风险语义修正器：
+- `location` 维度：当存在单个 201-500m 离群点且多数证据在 200m 内时，按稳健规则由 `risk` 修正为 `pass`
+- `address` 维度：当命中软匹配风险、存在高置信证据且证据地址语义一致时，由 `risk` 修正为 `pass`
+- 调整 `qc_status` 聚合规则：整体状态仅由核心事实维度和 `evidence_sufficiency` 决定，不再由 `downgrade_consistency` 直接拉低
+- 调整 `statistics_flags.is_auto_approvable`：仍要求 `qc_status=qualified` 且 `downgrade_consistency` 无风险，避免降级冲突直接自动放行
+
+### 影响
+- 仅修正 `risk -> pass` 的边界场景，不会将 `fail` 直接改为 `pass`
+- 修正后仍通过统一 `finalize_qc_result` 重算 `qc_score`、`qc_status`、`risk_dims`
+
 ## [2.3.10] - 2026-03-18
 
 ### 调整

@@ -43,10 +43,19 @@ def main() -> int:
         default=None,
         help='评分策略路径；不传时使用默认 config/scoring_policy.json',
     )
+    parser.add_argument(
+        '--poi-type',
+        default=None,
+        help='可选：输入 poi_type，用于在缺失 typecode 时自动补齐 category_fallback_support',
+    )
     args = parser.parse_args()
 
     payload = _read_payload(args.input)
-    finalized = finalize_qc_result(payload, scoring_policy_path=args.scoring_policy)
+    finalized = finalize_qc_result(
+        payload,
+        scoring_policy_path=args.scoring_policy,
+        poi_type_hint=args.poi_type,
+    )
     _write_payload(finalized, args.output)
     return 0
 

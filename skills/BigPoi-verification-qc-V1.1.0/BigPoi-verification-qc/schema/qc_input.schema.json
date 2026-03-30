@@ -57,6 +57,7 @@
     },
     "verify_info": {
       "type": "object",
+      "description": "上游核实明细字段，仅用于追溯，不参与 QC 判定。",
       "properties": {
         "existence": {
           "$ref": "#/definitions/legacy_dimension"
