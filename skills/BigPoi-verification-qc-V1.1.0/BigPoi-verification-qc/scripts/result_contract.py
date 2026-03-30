@@ -11,6 +11,7 @@ BigPOI 质检结果契约计算模块。
 
 import copy
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -35,6 +36,25 @@ RISK_STATUSES = {'risk', 'fail'}
 AUTHORITATIVE_SOURCE_TYPES = {'business_license', 'official_registry', 'government', 'official_data'}
 FALLBACK_SUPPORT_LEVELS = {'strong', 'medium', 'weak', 'none', 'conflict'}
 _POI_TYPE_MAPPING_CACHE: Optional[Dict[str, Any]] = None
+ADDRESS_ANCHOR_TOKENS = (
+    '路',
+    '街',
+    '巷',
+    '号',
+    '国道',
+    '省道',
+    '县道',
+    '大道',
+    '道',
+    '村',
+    '社区',
+    '开发区',
+    '工业区',
+    '交叉口',
+)
+ROAD_PATTERN = re.compile(r'([A-Za-z0-9\u4e00-\u9fff]{1,24}(?:路|街|巷|大道|国道|省道|县道|道))')
+HOUSE_NUMBER_PATTERN = re.compile(r'(\d+)\s*号')
+ROAD_CODE_PATTERN = re.compile(r'([gs]\d{2,4})')
 
 RULE_METADATA = {
     'R1': {
@@ -504,22 +524,126 @@ def _normalize_address_for_compare(text: str) -> str:
         normalized = normalized.replace(token, '')
     normalized = normalized.replace('人民西路', '人民路')
     normalized = normalized.replace('国道', 'g')
+    normalized = re.sub(r'g\s*(\d+)', r'g\1', normalized)
+    normalized = re.sub(r'(\d+)g', r'g\1', normalized)
     normalized = normalized.replace('大道', '路')
     return normalized
+
+
+def _is_low_information_address(address: str) -> bool:
+    text = address.strip()
+    if not text:
+        return True
+    if any(char.isdigit() for char in text):
+        return False
+    if any(token in text for token in ADDRESS_ANCHOR_TOKENS):
+        return False
+    normalized = _normalize_address_for_compare(text)
+    return len(normalized) <= 6
+
+
+def _extract_informative_addresses(evidence_items: List[Dict[str, Any]]) -> List[str]:
+    informative: List[str] = []
+    for item in evidence_items:
+        if not isinstance(item, dict):
+            continue
+        data = item.get('data')
+        if not isinstance(data, dict):
+            continue
+        address = data.get('address')
+        if not isinstance(address, str):
+            continue
+        address = address.strip()
+        if not address or _is_low_information_address(address):
+            continue
+        informative.append(address)
+    return informative
+
+
+def _extract_informative_address_confidences(evidence_items: List[Dict[str, Any]]) -> List[float]:
+    values: List[float] = []
+    for item in evidence_items:
+        if not isinstance(item, dict):
+            continue
+        data = item.get('data')
+        if not isinstance(data, dict):
+            continue
+        address = data.get('address')
+        if not isinstance(address, str):
+            continue
+        address = address.strip()
+        if not address or _is_low_information_address(address):
+            continue
+        confidence = _evidence_confidence(item)
+        if confidence > 0:
+            values.append(confidence)
+    return values
+
+
+def _are_two_addresses_semantically_consistent(base: str, candidate: str) -> bool:
+    normalized_base = _normalize_address_for_compare(base)
+    normalized_candidate = _normalize_address_for_compare(candidate)
+    if not normalized_base or not normalized_candidate:
+        return True
+    if normalized_candidate == normalized_base:
+        return True
+    # 允许包含关系，兼容“完整地址 vs 简写地址”
+    if normalized_candidate in normalized_base or normalized_base in normalized_candidate:
+        return True
+    base_road_code = _extract_road_code(base)
+    candidate_road_code = _extract_road_code(candidate)
+    if base_road_code and candidate_road_code and base_road_code == candidate_road_code:
+        return True
+    return False
+
+
+def _extract_road_anchor(address: str) -> Optional[str]:
+    match = ROAD_PATTERN.search(address)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _extract_house_number(address: str) -> Optional[str]:
+    match = HOUSE_NUMBER_PATTERN.search(address)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _extract_road_code(address: str) -> Optional[str]:
+    normalized = _normalize_address_for_compare(address)
+    match = ROAD_CODE_PATTERN.search(normalized)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _describe_address_conflict(addresses: List[str]) -> str:
+    if len(addresses) < 2:
+        return '证据地址主锚点不一致，无法判定为同一地址。'
+    base = addresses[0]
+    for candidate in addresses[1:]:
+        if _are_two_addresses_semantically_consistent(base, candidate):
+            continue
+        base_house = _extract_house_number(base)
+        candidate_house = _extract_house_number(candidate)
+        if base_house and candidate_house and base_house != candidate_house:
+            return f'门牌号不一致（{base_house}号 vs {candidate_house}号）。冲突样例："{base}" vs "{candidate}"。'
+        base_road = _extract_road_anchor(base)
+        candidate_road = _extract_road_anchor(candidate)
+        if base_road and candidate_road and _normalize_address_for_compare(base_road) != _normalize_address_for_compare(candidate_road):
+            return f'道路主干不一致（{base_road} vs {candidate_road}）。冲突样例："{base}" vs "{candidate}"。'
+        return f'主地址锚点不一致。冲突样例："{base}" vs "{candidate}"。'
+    return '证据地址之间存在无法消解的语义冲突。'
 
 
 def _are_addresses_semantically_consistent(addresses: List[str]) -> bool:
     if len(addresses) <= 1:
         return True
-    normalized = [_normalize_address_for_compare(item) for item in addresses if item]
-    if not normalized:
-        return True
-    base = normalized[0]
-    for candidate in normalized[1:]:
-        if candidate == base:
-            continue
-        # 允许包含关系，兼容“完整地址 vs 简写地址”
-        if candidate in base or base in candidate:
+    base = addresses[0]
+    for candidate in addresses[1:]:
+        if _are_two_addresses_semantically_consistent(base, candidate):
             continue
         return False
     return True
@@ -584,7 +708,11 @@ def _apply_address_semantic_adjustment(dimension_results: Dict[str, Any]) -> Non
     if not any(keyword in explanation for keyword in soft_risk_keywords):
         return
 
-    confidences = _extract_confidences(evidence)
+    informative_confidences = _extract_informative_address_confidences(evidence)
+    if not informative_confidences:
+        dim_result['explanation'] = '地址风险：有效证据仅包含省市级或低信息地址，无法确认道路与门牌是否一致。'
+        return
+    confidences = informative_confidences
     max_confidence = max(confidences) if confidences else 0.0
     # 对“仅前缀差异（如省市区/镇街道）+ 主地址一致”场景放宽阈值，避免误判为风险。
     prefix_only_hints = ('主地址', '前缀', '省市区', '镇街道')
@@ -592,8 +720,12 @@ def _apply_address_semantic_adjustment(dimension_results: Dict[str, Any]) -> Non
     if max_confidence < required_confidence:
         return
 
-    addresses = _extract_addresses(evidence)
+    addresses = _extract_informative_addresses(evidence)
+    if not addresses:
+        dim_result['explanation'] = '地址风险：有效证据仅包含省市级或低信息地址，无法确认道路与门牌是否一致。'
+        return
     if not _are_addresses_semantically_consistent(addresses):
+        dim_result['explanation'] = f"地址风险：{_describe_address_conflict(addresses)}"
         return
 
     dim_result['status'] = 'pass'

@@ -1499,6 +1499,74 @@
           }
         },
         {
+          "name": "branch_suffix_only_support_count",
+          "function": "count_match_level",
+          "selector": "evidence_record[]",
+          "where": {
+            "left": {
+              "ref": "evidence.verification.is_valid"
+            },
+            "op": "eq",
+            "right": true
+          },
+          "params": {
+            "match_function": "address_match_level",
+            "record_selector": "address",
+            "evidence_selector": "evidence.data.address",
+            "normalizer": "address",
+            "levels": ["branch_suffix_only"]
+          }
+        },
+        {
+          "name": "non_main_branch_soft_support_count",
+          "function": "count_match_level",
+          "selector": "evidence_record[]",
+          "where": {
+            "left": {
+              "ref": "evidence.verification.is_valid"
+            },
+            "op": "eq",
+            "right": true
+          },
+          "params": {
+            "match_function": "address_match_level",
+            "record_selector": "address",
+            "evidence_selector": "evidence.data.address",
+            "normalizer": "address",
+            "levels": ["missing_house_number", "ambiguous", "street_conflict"]
+          }
+        },
+        {
+          "name": "high_confidence_main_or_branch_support_count",
+          "function": "count_match_level",
+          "selector": "evidence_record[]",
+          "where": {
+            "all": [
+              {
+                "left": {
+                  "ref": "evidence.verification.is_valid"
+                },
+                "op": "eq",
+                "right": true
+              },
+              {
+                "left": {
+                  "ref": "evidence.verification.confidence"
+                },
+                "op": "gte",
+                "right": 0.85
+              }
+            ]
+          },
+          "params": {
+            "match_function": "address_match_level",
+            "record_selector": "address",
+            "evidence_selector": "evidence.data.address",
+            "normalizer": "address",
+            "levels": ["main_address_only", "branch_suffix_only"]
+          }
+        },
+        {
           "name": "hard_conflict_count",
           "function": "count_match_level",
           "selector": "evidence_record[]",
@@ -1643,26 +1711,152 @@
               {
                 "any": [
                   {
-                    "left": {
-                      "ref": "metric.main_address_only_support_count"
-                    },
-                    "op": "eq",
-                    "right": 0
+                    "all": [
+                      {
+                        "left": {
+                          "ref": "metric.main_address_only_support_count"
+                        },
+                        "op": "eq",
+                        "right": 0
+                      },
+                      {
+                        "left": {
+                          "ref": "metric.branch_suffix_only_support_count"
+                        },
+                        "op": "eq",
+                        "right": 0
+                      }
+                    ]
                   },
                   {
                     "left": {
-                      "ref": "metric.soft_support_count"
+                      "ref": "metric.non_main_branch_soft_support_count"
                     },
-                    "op": "gt",
-                    "right": {
-                      "ref": "metric.main_address_only_support_count"
-                    }
+                    "op": "gte",
+                    "right": 1
+                  },
+                  {
+                    "all": [
+                      {
+                        "any": [
+                          {
+                            "left": {
+                              "ref": "metric.main_address_only_support_count"
+                            },
+                            "op": "gte",
+                            "right": 1
+                          },
+                          {
+                            "left": {
+                              "ref": "metric.branch_suffix_only_support_count"
+                            },
+                            "op": "gte",
+                            "right": 1
+                          }
+                        ]
+                      },
+                      {
+                        "left": {
+                          "ref": "metric.high_confidence_main_or_branch_support_count"
+                        },
+                        "op": "eq",
+                        "right": 0
+                      }
+                    ]
                   }
                 ]
               }
             ]
           },
           "explanation_template": "地址风险：地址仅形成软匹配。软匹配指道路一致但门牌缺失、门牌一致但道路别名不同，或存在类似“人民路/人民西路”的具体差异；解释中必须输出真实冲突点。",
+          "evidence_policy": {
+            "mode": "filter",
+            "selector": "evidence_record[]",
+            "where": {
+              "left": {
+                "ref": "evidence.data.address"
+              },
+              "op": "exists"
+            },
+            "min_items": 1,
+            "max_items": 5
+          }
+        },
+        {
+          "id": "address_pass_semantic_soft_support",
+          "status": "pass",
+          "risk_level": "none",
+          "issue_code": "address_supported_by_main_or_branch_semantics",
+          "trigger_rule": "R4",
+          "when": {
+            "all": [
+              {
+                "left": {
+                  "ref": "metric.hard_conflict_count"
+                },
+                "op": "eq",
+                "right": 0
+              },
+              {
+                "left": {
+                  "ref": "metric.exact_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              },
+              {
+                "any": [
+                  {
+                    "left": {
+                      "ref": "metric.main_address_only_support_count"
+                    },
+                    "op": "gte",
+                    "right": 2
+                  },
+                  {
+                    "left": {
+                      "ref": "metric.branch_suffix_only_support_count"
+                    },
+                    "op": "gte",
+                    "right": 2
+                  },
+                  {
+                    "all": [
+                      {
+                        "left": {
+                          "ref": "metric.main_address_only_support_count"
+                        },
+                        "op": "gte",
+                        "right": 1
+                      },
+                      {
+                        "left": {
+                          "ref": "metric.branch_suffix_only_support_count"
+                        },
+                        "op": "gte",
+                        "right": 1
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "left": {
+                  "ref": "metric.high_confidence_main_or_branch_support_count"
+                },
+                "op": "gte",
+                "right": 1
+              },
+              {
+                "left": {
+                  "ref": "metric.non_main_branch_soft_support_count"
+                },
+                "op": "eq",
+                "right": 0
+              }
+            ]
+          },
+          "explanation_template": "地址通过：证据地址与输入地址在主道路与门牌上语义一致，仅存在前后缀或附属地点表达差异，且有高置信支持。",
           "evidence_policy": {
             "mode": "filter",
             "selector": "evidence_record[]",

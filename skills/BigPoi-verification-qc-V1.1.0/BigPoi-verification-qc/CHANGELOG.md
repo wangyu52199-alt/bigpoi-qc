@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## [2.3.15] - 2026-03-30
+
+### 调整
+- 调整 `rules/decision_tables.json` 的 `R4(address)`：
+- 新增 `branch_suffix_only_support_count`、`non_main_branch_soft_support_count`、`high_confidence_main_or_branch_support_count`
+- 新增 `address_pass_semantic_soft_support` 分支，支持“主地址/附属后缀语义一致 + 高置信支持”的场景直接 `pass`
+- 收紧 `address_risk_soft_match` 触发条件，避免把“仅主地址与附属后缀表达差异”的样本误判为 `risk`
+
+### 代码
+- 调整 `scripts/result_contract.py` 地址语义后处理：
+- 地址一致性判定仅使用“信息充分地址”（过滤仅省市级低信息地址）
+- 新增道路编号等价归一（例如 `325国道` 与 `G325`）
+- 当地址仍判定为 `risk` 时，解释优先输出真实冲突点（门牌冲突 / 道路主干冲突 / 主锚点冲突）
+
+### 文档
+- 更新 `SKILL.md` 至 `v2.3.15`，补充地址维度中“道路编号等价”与“低信息地址不可单独支撑通过”的规则口径
+
 ## [2.3.14] - 2026-03-30
 
 ### 修复
