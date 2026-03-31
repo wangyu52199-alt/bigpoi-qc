@@ -1,6 +1,6 @@
 ---
 name: bigpoi-verification-qc
-version: 2.3.15
+version: 2.4.2
 description:
   对上游大POI核实结果进行确定性质量检验，官方输入固定为上游平铺结构。重点检查名称、坐标、地址、行政区划、类型、存在性、证据充分性，以及人工核实降级是否一致。
   输出结构化、可审计、可复算的质检结果。
@@ -8,17 +8,20 @@ metadata:
   rules_path: ./rules/decision_tables.json
   schema_path: ./schema
   config_path: ./config
+  runtime_config_path: ../config/qc_runtime.json
   poi_type_mapping_path: ./config/poi_type_mapping.json
   poi_type_mapping_script: ./scripts/poi_type_mapping.py
   category_fallback_injector_path: ./scripts/inject_category_fallback.py
   contracts_path: ./scripts/result_contract.py
+  hybrid_policy_path: ./config/hybrid_policy.json
   finalizers_path: ./scripts/finalize_qc_result.py
+  hybrid_adjudicator_path: ./scripts/hybrid_adjudicator.py
   persisters_path: ./scripts/result_persister.py
   dsl_validators_path: ./scripts/dsl_validator.py
   validators_path: ./scripts/result_validator.py
 -------------
 
-# QC Skill · Big POI Verification v2.3.15
+# QC Skill · Big POI Verification v2.4.2
 
 ## 1. 技能目标
 
@@ -51,11 +54,14 @@ metadata:
 6. `./config/poi_type_mapping.json`
 7. `./scripts/poi_type_mapping.py`
 8. `./scripts/inject_category_fallback.py`
-9. `./scripts/result_contract.py`
-10. `./scripts/finalize_qc_result.py`
-11. `./scripts/result_validator.py`
-12. `./scripts/dsl_validator.py`
-13. `./scripts/result_persister.py`
+9. `./config/hybrid_policy.json`
+10. `./schema/qc_model_judgement.schema.json`
+11. `./scripts/result_contract.py`
+12. `./scripts/finalize_qc_result.py`
+13. `./scripts/hybrid_adjudicator.py`
+14. `./scripts/result_validator.py`
+15. `./scripts/dsl_validator.py`
+16. `./scripts/result_persister.py`
 
 仅作辅助参考：
 
@@ -183,9 +189,10 @@ metadata:
 6. 基于事实维度和 `evidence_sufficiency` 推导 `qc_manual_review_required`
 7. 对比上游人工核实决策，判定 `downgrade_consistency`
 8. 模型只输出维度级结果：`task_id`、`dimension_results` 及各维度证据，不得手工计算派生字段
-9. 调用 `./scripts/finalize_qc_result.py` 统一组装 `qc_status`、`qc_score`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags` 和顶层 `explanation`
-10. 对组装后的最终 `qc_result` 调用 `./scripts/result_validator.py`
-11. 只有在校验通过后，才允许调用 `./scripts/result_persister.py`
+9. 可选：仅当存在争议维度时，模型输出 `qc_model_judgement`（只允许给维度覆盖建议，不允许输出最终 `qc_result`）
+10. 使用 `./scripts/finalize_qc_result.py`（或 `./scripts/hybrid_adjudicator.py`）执行规则聚合与可控覆盖，统一组装 `qc_status`、`qc_score`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags` 和顶层 `explanation`
+11. 对组装后的最终 `qc_result` 调用 `./scripts/result_validator.py`
+12. 只有在校验通过后，才允许调用 `./scripts/result_persister.py`
 
 严格禁止：
 
@@ -195,6 +202,7 @@ metadata:
 - 手写结果文件路径或文件名
 - 手工计算或手工拼装 `qc_score`、`qc_status`、`has_risk`、`risk_dims`、`triggered_rules`、`statistics_flags`
 - 手工编写顶层 `explanation`
+- 让模型直接拼装最终 `qc_result`
 - 跳过 `finalize_qc_result.py`、`result_validator.py`、`result_persister.py`
 
 ## 6. 判定原则
@@ -390,7 +398,13 @@ metadata:
 
 - `output/results/{task_id}/`
 
-默认根目录必须优先使用当前技能工作区根目录，即同时包含 `BigPoi-verification-qc` 和 `qc-write-pg-qc` 的目录；仅在无法定位该工作区时，才允许回退到单技能目录或显式传入的 `QC_OUTPUT_DIR`。
+默认根目录优先级：
+
+- `config/qc_runtime.json` 中的 `result_dir`（推荐，统一质检与回库路径）
+- `QC_OUTPUT_DIR`
+- 自动探测工作区根目录（兼容回退）
+
+当 `qc_runtime.json` 配置 `strict_result_dir=true` 时，持久化必须强制写入配置路径，不得使用其他目录。
 
 如果显式传入的 `output_dir` 已经是 `{task_id}` 目录，持久化器必须直接复用该目录，不得再追加一层 `{task_id}`。
 
@@ -419,6 +433,14 @@ metadata:
 ## 10. 结果聚合规则
 
 以下聚合规则必须由 `./scripts/result_contract.py` / `./scripts/finalize_qc_result.py` 统一实现，模型只能提供维度级输入，不得手工改写最终聚合结果。
+
+hybrid 裁决（可选）仅允许做“争议维度覆盖”，规则如下：
+
+- 仅可覆盖 `name` / `address` / `administrative` / `category`
+- 默认只允许 `risk -> pass`，禁止 `fail -> pass`
+- 必须提供 `used_evidence_ids` 和 `reason_code`
+- 优先依据结构化字段判定硬冲突：`issue_code` / `hard_conflict`，仅在缺失结构化字段时才回退关键词识别
+- 覆盖后仍必须由程序统一重算 `evidence_sufficiency`、`downgrade_consistency`、`qc_score`、`qc_status`
 
 核心事实维度集合：
 

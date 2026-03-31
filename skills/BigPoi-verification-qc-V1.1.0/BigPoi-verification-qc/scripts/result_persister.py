@@ -27,6 +27,88 @@ if str(SCRIPT_DIR) not in sys.path:
 from result_contract import finalize_qc_result, load_scoring_policy  # noqa: E402
 from result_validator import ResultValidator  # noqa: E402
 
+RUNTIME_CONFIG_FILENAME = 'qc_runtime.json'
+_RUNTIME_CONFIG_CACHE: Optional[Dict] = None
+
+
+def _dedupe_paths(paths: List[Path]) -> List[Path]:
+    deduped: List[Path] = []
+    seen = set()
+    for path in paths:
+        try:
+            resolved = path.expanduser().resolve()
+        except Exception:
+            resolved = path.expanduser()
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(resolved)
+    return deduped
+
+
+def _find_runtime_config_path() -> Optional[Path]:
+    env_config = os.environ.get('QC_RUNTIME_CONFIG')
+    candidate_paths: List[Path] = []
+    if env_config:
+        candidate_paths.append(Path(env_config))
+
+    anchors = [Path.cwd().resolve(), Path(__file__).resolve().parent]
+    for anchor in anchors:
+        for parent in [anchor, *anchor.parents]:
+            candidate_paths.append(parent / 'config' / RUNTIME_CONFIG_FILENAME)
+            candidate_paths.append(parent / 'BigPoi-verification-qc' / 'config' / RUNTIME_CONFIG_FILENAME)
+            candidate_paths.append(parent / 'qc-write-pg-qc' / 'config' / RUNTIME_CONFIG_FILENAME)
+
+    for path in _dedupe_paths(candidate_paths):
+        if path.is_file():
+            return path
+    return None
+
+
+def _load_runtime_config() -> Dict:
+    global _RUNTIME_CONFIG_CACHE
+    if _RUNTIME_CONFIG_CACHE is not None:
+        return _RUNTIME_CONFIG_CACHE
+
+    config_path = _find_runtime_config_path()
+    if config_path is None:
+        _RUNTIME_CONFIG_CACHE = {}
+        return _RUNTIME_CONFIG_CACHE
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as handle:
+            payload = json.load(handle)
+        if isinstance(payload, dict):
+            payload['__config_path__'] = str(config_path)
+            _RUNTIME_CONFIG_CACHE = payload
+        else:
+            _RUNTIME_CONFIG_CACHE = {}
+    except Exception:
+        _RUNTIME_CONFIG_CACHE = {}
+    return _RUNTIME_CONFIG_CACHE
+
+
+def _configured_result_dir_from_runtime() -> Optional[Path]:
+    config = _load_runtime_config()
+    raw_value = config.get('result_dir')
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None
+
+    candidate = Path(raw_value.strip()).expanduser()
+    if not candidate.is_absolute():
+        config_path = config.get('__config_path__')
+        if isinstance(config_path, str) and config_path:
+            candidate = Path(config_path).resolve().parent / candidate
+        else:
+            candidate = Path.cwd().resolve() / candidate
+    return candidate.resolve()
+
+
+def _strict_result_dir_enabled() -> bool:
+    config = _load_runtime_config()
+    return bool(config.get('strict_result_dir', False))
+
 
 def _is_workspace_root(path: Path) -> bool:
     """判断是否为当前技能包工作区根目录。"""
@@ -79,6 +161,10 @@ def _project_root_from_skill_install_path(path: Path) -> Optional[Path]:
 
 def get_default_output_dir() -> str:
     """获取默认输出目录：优先当前技能工作区根目录。"""
+    configured_result_dir = _configured_result_dir_from_runtime()
+    if configured_result_dir is not None:
+        return str(configured_result_dir)
+
     # 1) 明确指定: QC_OUTPUT_DIR 优先
     env_dir = os.environ.get('QC_OUTPUT_DIR')
     if env_dir:
@@ -125,8 +211,17 @@ class ResultPersister:
             logger: 日志记录器，可选
         """
         self.logger = logger or logging.getLogger(__name__)
-        if output_dir is None:
-            raw_output_dir = Path(get_default_output_dir())
+        configured_output_dir = _configured_result_dir_from_runtime()
+        strict_mode = _strict_result_dir_enabled()
+        if strict_mode and configured_output_dir is not None:
+            if output_dir:
+                self.logger.warning(
+                    "strict_result_dir=true，忽略传入 output_dir，使用配置路径：%s",
+                    configured_output_dir,
+                )
+            raw_output_dir = configured_output_dir
+        elif output_dir is None:
+            raw_output_dir = configured_output_dir if configured_output_dir is not None else Path(get_default_output_dir())
         else:
             raw_output_dir = Path(output_dir)
         self.output_dir = self._normalize_output_dir(raw_output_dir)
@@ -136,6 +231,16 @@ class ResultPersister:
             scoring_policy_path=str(SCRIPT_DIR.parent / 'config' / 'scoring_policy.json'),
             logger=self.logger,
         )
+
+    def _ensure_output_dir_writable(self) -> Optional[str]:
+        """确保输出根目录可创建且可写，失败时返回错误信息。"""
+        try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            return f'输出目录创建失败：{self.output_dir}，原因：{exc}'
+        if not os.access(self.output_dir, os.W_OK):
+            return f'输出目录不可写：{self.output_dir}'
+        return None
 
     def _normalize_output_dir(self, output_dir: Path) -> Path:
         """
@@ -194,6 +299,16 @@ class ResultPersister:
         files_created = {}
 
         try:
+            output_dir_error = self._ensure_output_dir_writable()
+            if output_dir_error:
+                return {
+                    'success': False,
+                    'status': 'failed',
+                    'output_dir': str(self.output_dir),
+                    'files': {},
+                    'errors': [output_dir_error]
+                }
+
             qc_result = finalize_qc_result(qc_result, scoring_policy=self.scoring_policy)
 
             # 1. 获取task_id

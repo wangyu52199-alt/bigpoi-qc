@@ -206,7 +206,43 @@ class ResultValidator:
                 errors.extend(self._validate_core_dimension(dim_name, dim_result))
 
         errors.extend(self._validate_triggered_rules(qc_result.get('triggered_rules', [])))
+        errors.extend(self._validate_adjudication(qc_result.get('adjudication')))
         errors.extend(self._check_logical_consistency(qc_result))
+        return errors
+
+    def _validate_adjudication(self, adjudication: Any) -> List[str]:
+        if adjudication is None:
+            return []
+        errors: List[str] = []
+        if not isinstance(adjudication, dict):
+            return ['adjudication 必须是对象']
+
+        required_fields = [
+            'mode',
+            'policy_enabled',
+            'uncertain_dims',
+            'model_override_count',
+            'applied_overrides',
+            'rejected_overrides',
+        ]
+        for field in required_fields:
+            if field not in adjudication:
+                errors.append(f"adjudication 缺少字段：{field}")
+
+        uncertain_dims = adjudication.get('uncertain_dims')
+        if uncertain_dims is not None and not isinstance(uncertain_dims, list):
+            errors.append('adjudication.uncertain_dims 必须是数组')
+
+        override_count = adjudication.get('model_override_count')
+        if override_count is not None:
+            if not isinstance(override_count, int) or override_count < 0:
+                errors.append('adjudication.model_override_count 必须是非负整数')
+
+        for key in ['applied_overrides', 'rejected_overrides']:
+            value = adjudication.get(key)
+            if value is not None and not isinstance(value, list):
+                errors.append(f'adjudication.{key} 必须是数组')
+
         return errors
 
     def _validate_core_dimension(self, dim_name: str, dim_result: Any) -> List[str]:
@@ -249,6 +285,16 @@ class ResultValidator:
         confidence = dim_result.get('confidence')
         if confidence is not None and not self._is_probability(confidence):
             errors.append(f"维度 {dim_name} 的 confidence 必须在 0-1 范围内")
+
+        issue_code = dim_result.get('issue_code')
+        if issue_code is not None and not isinstance(issue_code, str):
+            errors.append(f"维度 {dim_name} 的 issue_code 必须是字符串")
+
+        hard_conflict = dim_result.get('hard_conflict')
+        if hard_conflict is not None and not isinstance(hard_conflict, bool):
+            errors.append(f"维度 {dim_name} 的 hard_conflict 必须是布尔值")
+        if isinstance(hard_conflict, bool) and hard_conflict and status == 'pass':
+            errors.append(f"维度 {dim_name} 的 hard_conflict=true 时 status 不能为 pass")
 
         return errors
 

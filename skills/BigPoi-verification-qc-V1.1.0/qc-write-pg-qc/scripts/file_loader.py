@@ -20,6 +20,66 @@ from typing import Any, Dict, List, Optional
 
 
 TIMESTAMP_PATTERN = re.compile(r'^\d{8}_\d{6}$')
+RUNTIME_CONFIG_FILENAME = 'qc_runtime.json'
+_RUNTIME_CONFIG_CACHE: Optional[Dict[str, Any]] = None
+
+
+def _dedupe_paths(paths: List[Path]) -> List[Path]:
+    deduped: List[Path] = []
+    seen = set()
+    for path in paths:
+        try:
+            resolved = path.expanduser().resolve()
+        except Exception:
+            resolved = path.expanduser()
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(resolved)
+    return deduped
+
+
+def _find_runtime_config_path() -> Optional[Path]:
+    env_config = os.environ.get('QC_RUNTIME_CONFIG')
+    candidate_paths: List[Path] = []
+    if env_config:
+        candidate_paths.append(Path(env_config))
+
+    anchors = [Path.cwd().resolve(), Path(__file__).resolve().parent]
+    for anchor in anchors:
+        for parent in [anchor, *anchor.parents]:
+            candidate_paths.append(parent / 'config' / RUNTIME_CONFIG_FILENAME)
+            candidate_paths.append(parent / 'qc-write-pg-qc' / 'config' / RUNTIME_CONFIG_FILENAME)
+            candidate_paths.append(parent / 'BigPoi-verification-qc' / 'config' / RUNTIME_CONFIG_FILENAME)
+
+    for path in _dedupe_paths(candidate_paths):
+        if path.is_file():
+            return path
+    return None
+
+
+def _load_runtime_config() -> Dict[str, Any]:
+    global _RUNTIME_CONFIG_CACHE
+    if _RUNTIME_CONFIG_CACHE is not None:
+        return _RUNTIME_CONFIG_CACHE
+
+    config_path = _find_runtime_config_path()
+    if config_path is None:
+        _RUNTIME_CONFIG_CACHE = {}
+        return _RUNTIME_CONFIG_CACHE
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as handle:
+            payload = json.load(handle)
+        if isinstance(payload, dict):
+            payload['__config_path__'] = str(config_path)
+            _RUNTIME_CONFIG_CACHE = payload
+        else:
+            _RUNTIME_CONFIG_CACHE = {}
+    except Exception:
+        _RUNTIME_CONFIG_CACHE = {}
+    return _RUNTIME_CONFIG_CACHE
 
 
 class FileLoader:
@@ -29,6 +89,36 @@ class FileLoader:
         self.logger = None
         self._result_validator = None
         self._result_contract = None
+
+    def _runtime_config(self) -> Dict[str, Any]:
+        return _load_runtime_config()
+
+    def _configured_result_dir(self) -> Optional[Path]:
+        config = self._runtime_config()
+        raw_value = config.get('result_dir')
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            return None
+
+        candidate = Path(raw_value.strip()).expanduser()
+        if not candidate.is_absolute():
+            config_path = config.get('__config_path__')
+            if isinstance(config_path, str) and config_path:
+                candidate = Path(config_path).resolve().parent / candidate
+            else:
+                candidate = Path.cwd().resolve() / candidate
+        return candidate.resolve()
+
+    def _strict_result_dir_enabled(self) -> bool:
+        config = self._runtime_config()
+        return bool(config.get('strict_result_dir', False))
+
+    def _recovery_search_enabled(self) -> bool:
+        config = self._runtime_config()
+        if bool(config.get('disable_recovery_search', False)):
+            return False
+        if self._strict_result_dir_enabled():
+            return False
+        return True
 
     @staticmethod
     def _is_qc_skill_dir(path: Path) -> bool:
@@ -43,19 +133,55 @@ class FileLoader:
 
     @classmethod
     def _find_qc_skill_dir_under(cls, path: Path) -> Optional[Path]:
-        """在给定目录下查找主质检技能目录，兼容大小写和非固定目录名。"""
+        """在给定目录下查找主质检技能目录，兼容工作区与 .claude/.openclaw 安装形态。"""
         if not path.is_dir():
             return None
 
-        preferred_names = ['BigPoi-verification-qc', 'bigpoi-verification-qc']
-        for name in preferred_names:
-            candidate = path / name
-            if cls._is_qc_skill_dir(candidate):
-                return candidate
+        def _candidate_roots(base: Path) -> List[Path]:
+            roots: List[Path] = []
+            seen = set()
 
-        for child in path.iterdir():
-            if cls._is_qc_skill_dir(child):
-                return child
+            def _append(candidate: Path) -> None:
+                try:
+                    resolved = candidate.resolve()
+                except Exception:
+                    resolved = candidate
+                key = str(resolved)
+                if key in seen:
+                    return
+                seen.add(key)
+                if candidate.is_dir():
+                    roots.append(candidate)
+
+            _append(base)
+
+            base_name = base.name.lower()
+            if base_name in ('.claude', '.openclaw'):
+                _append(base / 'skills')
+            if base_name == 'skills':
+                _append(base)
+
+            for env_dir in ('.claude', '.openclaw'):
+                _append(base / env_dir / 'skills')
+
+            return roots
+
+        roots = _candidate_roots(path)
+        preferred_names = ['BigPoi-verification-qc', 'bigpoi-verification-qc']
+        for root in roots:
+            for name in preferred_names:
+                candidate = root / name
+                if cls._is_qc_skill_dir(candidate):
+                    return candidate
+
+        for root in roots:
+            try:
+                children = list(root.iterdir())
+            except OSError:
+                continue
+            for child in children:
+                if cls._is_qc_skill_dir(child):
+                    return child
 
         return None
 
@@ -74,6 +200,12 @@ class FileLoader:
         Returns:
             根目录路径
         """
+        configured_result_dir = self._configured_result_dir()
+        if configured_result_dir and configured_result_dir.name == 'results':
+            output_dir = configured_result_dir.parent
+            if output_dir.name == 'output':
+                return output_dir.parent
+
         env_dir = os.environ.get('QC_OUTPUT_DIR')
         if env_dir:
             env_path = Path(env_dir).expanduser().resolve()
@@ -234,8 +366,14 @@ class FileLoader:
         Returns:
             解析后的质检结果对象
         """
+        configured_result_dir = self._configured_result_dir()
+        if self._strict_result_dir_enabled() and configured_result_dir and not result_file:
+            result_dir = str(configured_result_dir)
+        elif not result_file and not result_dir and configured_result_dir:
+            result_dir = str(configured_result_dir)
+
         if not result_file and not result_dir:
-            raise ValueError('必须提供 result_file 或 result_dir')
+            raise ValueError('必须提供 result_file 或 result_dir（或在 qc_runtime.json 中配置 result_dir）')
 
         if result_file:
             file_path = self._resolve_result_file_path(result_file)
@@ -457,13 +595,22 @@ class FileLoader:
         """
         从索引文件读取完整文件路径，或在索引文件不存在时做受约束递归恢复。
         """
-        base_dir = Path(result_dir)
-        if not base_dir.is_absolute():
-            base_dir = self._find_root_dir() / base_dir
+        configured_result_dir = self._configured_result_dir()
+        strict_mode = self._strict_result_dir_enabled()
+        if strict_mode and configured_result_dir is not None:
+            base_dir = configured_result_dir
+        else:
+            base_dir = Path(result_dir)
+            if not base_dir.is_absolute():
+                base_dir = self._find_root_dir() / base_dir
 
         task_dir = base_dir if base_dir.name == task_id else base_dir / task_id
 
         if not task_dir.is_dir():
+            if not self._recovery_search_enabled():
+                raise FileNotFoundError(
+                    f'固定路径模式下未找到 task 目录：{task_dir}（task_id={task_id}）'
+                )
             return self._recover_from_search_roots(task_id, base_dir)
 
         index_files = self._collect_index_files(task_dir, task_id)
@@ -477,10 +624,19 @@ class FileLoader:
         try:
             return self._find_latest_complete_file(task_dir, task_id)
         except FileNotFoundError:
+            if not self._recovery_search_enabled():
+                raise FileNotFoundError(
+                    f'固定路径模式下未找到合法结果文件：{task_dir}（task_id={task_id}）'
+                )
             return self._recover_from_search_roots(task_id, base_dir)
 
     def _recover_from_search_roots(self, task_id: str, base_dir: Path) -> Path:
         """按搜索范围逐级做受约束恢复。"""
+        if not self._recovery_search_enabled():
+            raise FileNotFoundError(
+                f'固定路径模式已禁用恢复搜索（task_id={task_id}，base_dir={base_dir}）'
+            )
+
         search_roots: List[Path] = []
         if base_dir.exists():
             search_roots.append(base_dir)

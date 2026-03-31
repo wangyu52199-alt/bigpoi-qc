@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-QC Write PG QC v1.2.6 - 质检结果写入到 PostgreSQL poi_qc 表
+QC Write PG QC v1.3.0 - 质检结果写入到 PostgreSQL poi_qc 表
 入口文件：本技能从本地化 JSON 文件读取质检结果，写入数据库
 支持灵活表名配置、索引缺失容错、重试场景下的最新结果恢复，以及回库前的派生字段自动收敛
 """
@@ -103,8 +103,13 @@ def get_default_output_dir() -> str:
     """
     获取默认结果目录。
 
-    优先使用 QC_OUTPUT_DIR；否则基于当前技能的根目录定位 output/results。
+    优先读取 qc_runtime.json 的 result_dir；其次使用 QC_OUTPUT_DIR；
+    否则基于当前技能的根目录定位 output/results。
     """
+    configured_result_dir = FileLoader()._configured_result_dir()
+    if configured_result_dir is not None:
+        return str(configured_result_dir)
+
     env_dir = os.environ.get('QC_OUTPUT_DIR')
     if env_dir:
         return str(Path(env_dir).expanduser().resolve())
@@ -236,7 +241,7 @@ def execute_batch(params_list: list) -> dict:
 def main():
     """主函数"""
     if len(sys.argv) < 2:
-        print("BigPOI QC Result Writer v1.2.6")
+        print("BigPOI QC Result Writer v1.3.0")
         print("本技能用于将质检结果写入 PostgreSQL poi_qc 表")
         print("\n使用方式：")
         print("  Python调用:")

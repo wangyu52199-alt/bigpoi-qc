@@ -13,7 +13,7 @@ import copy
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 try:
     from poi_type_mapping import evaluate_fallback_support, load_mapping
@@ -55,6 +55,91 @@ ADDRESS_ANCHOR_TOKENS = (
 ROAD_PATTERN = re.compile(r'([A-Za-z0-9\u4e00-\u9fff]{1,24}(?:路|街|巷|大道|国道|省道|县道|道))')
 HOUSE_NUMBER_PATTERN = re.compile(r'(\d+)\s*号')
 ROAD_CODE_PATTERN = re.compile(r'([gs]\d{2,4})')
+HYBRID_DEFAULT_POLICY = {
+    'version': '1.0.0',
+    'enabled': False,
+    'allowed_dimensions': ['name', 'address', 'administrative', 'category'],
+    'candidate_statuses': ['risk'],
+    'allowed_transitions': ['risk->pass'],
+    'min_confidence_default': 0.85,
+    'min_confidence_by_dimension': {
+        'name': 0.88,
+        'address': 0.85,
+        'administrative': 0.85,
+        'category': 0.85,
+    },
+    'min_evidence_ids_by_dimension': {
+        'name': 1,
+        'address': 1,
+        'administrative': 1,
+        'category': 1,
+    },
+    'allow_override_when_hard_conflict': False,
+    'hard_conflict_issue_codes': {
+        'name': [
+            'all_name_similarity_below_threshold',
+        ],
+        'address': [
+            'address_direct_conflict',
+        ],
+        'administrative': [
+            'administrative_direct_conflict',
+        ],
+        'category': [
+            'typecode_conflict',
+        ],
+    },
+    'allowed_reason_codes': {
+        'name': [
+            'NAME_ALIAS_MATCH',
+            'NAME_PREFIX_SUFFIX_EQUIV',
+        ],
+        'address': [
+            'ADDR_PREFIX_OR_ROADCODE_EQUIV',
+            'ADDR_MAIN_ANCHOR_EQUIV',
+        ],
+        'administrative': [
+            'ADMIN_CITY_INFERRED_SUPPORT',
+        ],
+        'category': [
+            'CATEGORY_SEMANTIC_FALLBACK_STRONG',
+            'CATEGORY_NAME_LEVEL_SUPPORT',
+        ],
+    },
+    'hard_conflict_keywords': {
+        'name': [
+            '硬冲突',
+            '完全不一致',
+            '名称失败',
+        ],
+        'address': [
+            '直接冲突',
+            '门牌号不一致',
+            '道路主干不一致',
+            '城市级',
+            '地址失败',
+        ],
+        'administrative': [
+            '行政区划失败',
+            '城市冲突',
+            'city冲突',
+        ],
+        'category': [
+            '类型失败',
+            'typecode冲突',
+            '类型冲突',
+        ],
+    },
+    'reason_templates': {
+        'NAME_ALIAS_MATCH': '名称别名/简称语义一致，主要实体未发生变化。',
+        'NAME_PREFIX_SUFFIX_EQUIV': '名称仅存在行政层级前后缀差异，核心名称一致。',
+        'ADDR_PREFIX_OR_ROADCODE_EQUIV': '地址仅存在行政前缀或道路编号表达差异，主锚点一致。',
+        'ADDR_MAIN_ANCHOR_EQUIV': '地址主道路与门牌语义一致，附属后缀差异不影响同址判断。',
+        'ADMIN_CITY_INFERRED_SUPPORT': '结构化 city 缺失时，地址/名称/原始字段可稳定支持输入 city。',
+        'CATEGORY_SEMANTIC_FALLBACK_STRONG': '缺失 typecode 时，语义回退信号为 strong，支持类型通过。',
+        'CATEGORY_NAME_LEVEL_SUPPORT': '类型大类与名称层级同时命中，可判定类型一致。',
+    },
+}
 
 RULE_METADATA = {
     'R1': {
@@ -131,6 +216,25 @@ def load_scoring_policy(scoring_policy_path: Optional[str] = None) -> Optional[D
     return load_json(Path(scoring_policy_path))
 
 
+def _deep_update(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+    for key, value in updates.items():
+        if isinstance(base.get(key), dict) and isinstance(value, dict):
+            _deep_update(base[key], value)
+        else:
+            base[key] = copy.deepcopy(value)
+    return base
+
+
+def load_hybrid_policy(hybrid_policy_path: Optional[str] = None) -> Dict[str, Any]:
+    policy = copy.deepcopy(HYBRID_DEFAULT_POLICY)
+    if hybrid_policy_path is None:
+        hybrid_policy_path = str(Path(__file__).resolve().parent.parent / 'config' / 'hybrid_policy.json')
+    loaded = load_json(Path(hybrid_policy_path))
+    if isinstance(loaded, dict):
+        policy = _deep_update(policy, loaded)
+    return policy
+
+
 def _dimension_status(dimension_results: Dict[str, Any], dim_name: str) -> Optional[str]:
     dim_result = dimension_results.get(dim_name, {})
     if not isinstance(dim_result, dict):
@@ -187,6 +291,13 @@ def _evidence_source_type(evidence: Dict[str, Any]) -> str:
 def _safe_float(value: Any) -> Optional[float]:
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return None
 
@@ -907,6 +1018,349 @@ def normalize_dimension_results(
     return adjusted
 
 
+def _normalize_dim_name(value: Any) -> str:
+    if not isinstance(value, str):
+        return ''
+    return value.strip()
+
+
+def _normalize_reason_code(value: Any) -> str:
+    if not isinstance(value, str):
+        return ''
+    return value.strip().upper()
+
+
+def _normalize_issue_code(value: Any) -> str:
+    if not isinstance(value, str):
+        return ''
+    return value.strip().lower()
+
+
+def _extract_dim_evidence_ids(dim_result: Dict[str, Any]) -> Set[str]:
+    evidence_ids: Set[str] = set()
+    evidence = dim_result.get('evidence')
+    if not isinstance(evidence, list):
+        return evidence_ids
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+        evidence_id = item.get('evidence_id')
+        if isinstance(evidence_id, str) and evidence_id.strip():
+            evidence_ids.add(evidence_id.strip())
+    return evidence_ids
+
+
+def _is_dimension_hard_conflict(dim_name: str, dim_result: Dict[str, Any], policy: Dict[str, Any]) -> bool:
+    status = str(dim_result.get('status') or '').strip()
+    if status == 'fail':
+        return True
+
+    issue_code = _normalize_issue_code(dim_result.get('issue_code'))
+    hard_issue_codes = {
+        _normalize_issue_code(code)
+        for code in ((policy.get('hard_conflict_issue_codes') or {}).get(dim_name) or [])
+        if _normalize_issue_code(code)
+    }
+    if issue_code and issue_code in hard_issue_codes:
+        return True
+
+    hard_conflict_value = dim_result.get('hard_conflict')
+    if isinstance(hard_conflict_value, bool):
+        return hard_conflict_value
+
+    # 兼容历史数据：当结构化字段缺失时，回退到 explanation 关键词识别
+    explanation = _trim_explanation(dim_result.get('explanation')).lower()
+    if not explanation:
+        return False
+
+    hard_keywords = ((policy.get('hard_conflict_keywords') or {}).get(dim_name) or [])
+    for keyword in hard_keywords:
+        if not isinstance(keyword, str):
+            continue
+        if keyword.strip().lower() and keyword.strip().lower() in explanation:
+            return True
+    return False
+
+
+def derive_uncertain_dims(dimension_results: Dict[str, Any], hybrid_policy: Dict[str, Any]) -> List[str]:
+    allowed_dimensions = {
+        _normalize_dim_name(dim_name)
+        for dim_name in (hybrid_policy.get('allowed_dimensions') or [])
+        if _normalize_dim_name(dim_name) in CORE_DIMENSIONS
+    }
+    candidate_statuses = {
+        str(status).strip()
+        for status in (hybrid_policy.get('candidate_statuses') or [])
+        if isinstance(status, str) and status.strip()
+    }
+    uncertain_dims: List[str] = []
+
+    for dim_name in ALL_DIMENSIONS:
+        if dim_name not in allowed_dimensions:
+            continue
+        dim_result = dimension_results.get(dim_name)
+        if not isinstance(dim_result, dict):
+            continue
+        status = str(dim_result.get('status') or '').strip()
+        if status not in candidate_statuses:
+            continue
+        if _is_dimension_hard_conflict(dim_name, dim_result, hybrid_policy):
+            continue
+        uncertain_dims.append(dim_name)
+    return uncertain_dims
+
+
+def _normalize_used_evidence_ids(raw_value: Any) -> List[str]:
+    if not isinstance(raw_value, list):
+        return []
+    result: List[str] = []
+    seen = set()
+    for item in raw_value:
+        if not isinstance(item, str):
+            continue
+        value = item.strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def _override_transition(before_status: str, proposed_status: str) -> str:
+    return f'{before_status}->{proposed_status}'
+
+
+def apply_model_adjudication(
+    dimension_results: Dict[str, Any],
+    model_judgement: Optional[Dict[str, Any]],
+    hybrid_policy: Dict[str, Any],
+    task_id: Optional[str] = None,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    adjusted = copy.deepcopy(dimension_results or {})
+    policy = hybrid_policy or copy.deepcopy(HYBRID_DEFAULT_POLICY)
+
+    report: Dict[str, Any] = {
+        'mode': 'rules_only',
+        'policy_enabled': bool(policy.get('enabled', False)),
+        'task_id': task_id,
+        'uncertain_dims': [],
+        'model_override_count': 0,
+        'applied_overrides': [],
+        'rejected_overrides': [],
+    }
+
+    if not report['policy_enabled']:
+        return adjusted, report
+
+    report['mode'] = 'hybrid'
+    uncertain_dims = derive_uncertain_dims(adjusted, policy)
+    report['uncertain_dims'] = uncertain_dims
+
+    if not isinstance(model_judgement, dict):
+        report['mode'] = 'hybrid_no_model_judgement'
+        return adjusted, report
+
+    judgement_task_id = str(model_judgement.get('task_id') or '').strip()
+    if task_id and judgement_task_id and judgement_task_id != str(task_id):
+        report['mode'] = 'hybrid_rejected_task_mismatch'
+        report['rejected_overrides'].append(
+            {
+                'reason': 'task_id_mismatch',
+                'message': f'model_judgement.task_id={judgement_task_id} 与 qc_result.task_id={task_id} 不一致',
+            }
+        )
+        return adjusted, report
+
+    raw_overrides = model_judgement.get('overrides')
+    if not isinstance(raw_overrides, list):
+        report['mode'] = 'hybrid_no_override'
+        return adjusted, report
+
+    report['model_override_count'] = len(raw_overrides)
+    if len(raw_overrides) == 0:
+        report['mode'] = 'hybrid_no_override'
+        return adjusted, report
+
+    allowed_dimensions = {
+        _normalize_dim_name(dim_name)
+        for dim_name in (policy.get('allowed_dimensions') or [])
+        if _normalize_dim_name(dim_name)
+    }
+    allowed_transitions = {
+        str(item).strip()
+        for item in (policy.get('allowed_transitions') or [])
+        if isinstance(item, str) and item.strip()
+    }
+    min_conf_default = _safe_float(policy.get('min_confidence_default'))
+    if min_conf_default is None:
+        min_conf_default = 0.85
+    min_conf_by_dim = policy.get('min_confidence_by_dimension') or {}
+    min_evidence_by_dim = policy.get('min_evidence_ids_by_dimension') or {}
+    allowed_reason_codes = policy.get('allowed_reason_codes') or {}
+    reason_templates = policy.get('reason_templates') or {}
+    allow_hard_conflict = bool(policy.get('allow_override_when_hard_conflict', False))
+
+    for raw_override in raw_overrides:
+        if not isinstance(raw_override, dict):
+            report['rejected_overrides'].append(
+                {
+                    'reason': 'invalid_override_payload',
+                    'message': f'override 项不是对象：{raw_override!r}',
+                }
+            )
+            continue
+
+        dim_name = _normalize_dim_name(raw_override.get('dimension'))
+        proposed_status = str(raw_override.get('proposed_status') or '').strip()
+        reason_code = _normalize_reason_code(raw_override.get('reason_code'))
+        used_evidence_ids = _normalize_used_evidence_ids(raw_override.get('used_evidence_ids'))
+        confidence_value = _safe_float(raw_override.get('confidence'))
+        confidence = None if confidence_value is None else max(0.0, min(1.0, confidence_value))
+
+        dim_result = adjusted.get(dim_name)
+        before_status = str(dim_result.get('status') or '').strip() if isinstance(dim_result, dict) else ''
+
+        rejection_base = {
+            'dimension': dim_name,
+            'proposed_status': proposed_status,
+            'reason_code': reason_code,
+            'used_evidence_ids': used_evidence_ids,
+        }
+
+        if dim_name not in allowed_dimensions:
+            report['rejected_overrides'].append(
+                {
+                    **rejection_base,
+                    'reason': 'dimension_not_allowed',
+                    'message': f'维度 {dim_name} 不在 hybrid 覆盖白名单中',
+                }
+            )
+            continue
+
+        if dim_name not in uncertain_dims:
+            report['rejected_overrides'].append(
+                {
+                    **rejection_base,
+                    'reason': 'dimension_not_uncertain',
+                    'message': f'维度 {dim_name} 不是当前可裁决争议维度',
+                }
+            )
+            continue
+
+        if not isinstance(dim_result, dict):
+            report['rejected_overrides'].append(
+                {
+                    **rejection_base,
+                    'reason': 'dimension_result_missing',
+                    'message': f'维度 {dim_name} 结果缺失或结构非法',
+                }
+            )
+            continue
+
+        transition = _override_transition(before_status, proposed_status)
+        if transition not in allowed_transitions:
+            report['rejected_overrides'].append(
+                {
+                    **rejection_base,
+                    'reason': 'transition_not_allowed',
+                    'message': f'状态迁移 {transition} 不在允许列表中',
+                }
+            )
+            continue
+
+        if (not allow_hard_conflict) and _is_dimension_hard_conflict(dim_name, dim_result, policy):
+            report['rejected_overrides'].append(
+                {
+                    **rejection_base,
+                    'reason': 'hard_conflict_guard',
+                    'message': f'维度 {dim_name} 命中硬冲突保护，不允许覆盖',
+                }
+            )
+            continue
+
+        dim_min_conf = _safe_float(min_conf_by_dim.get(dim_name))
+        if dim_min_conf is None:
+            dim_min_conf = min_conf_default
+        if confidence is None or confidence < dim_min_conf:
+            report['rejected_overrides'].append(
+                {
+                    **rejection_base,
+                    'reason': 'confidence_too_low',
+                    'message': f'置信度不足：需要 >= {dim_min_conf:.2f}，实际={confidence}',
+                }
+            )
+            continue
+
+        dim_reason_whitelist = {
+            _normalize_reason_code(code)
+            for code in (allowed_reason_codes.get(dim_name) or [])
+            if _normalize_reason_code(code)
+        }
+        if reason_code not in dim_reason_whitelist:
+            report['rejected_overrides'].append(
+                {
+                    **rejection_base,
+                    'reason': 'reason_code_not_allowed',
+                    'message': f'reason_code={reason_code} 不在维度 {dim_name} 白名单内',
+                }
+            )
+            continue
+
+        dim_evidence_ids = _extract_dim_evidence_ids(dim_result)
+        min_required = _safe_int(min_evidence_by_dim.get(dim_name, 1))
+        if min_required is None or min_required < 0:
+            min_required = 1
+        if len(used_evidence_ids) < min_required:
+            report['rejected_overrides'].append(
+                {
+                    **rejection_base,
+                    'reason': 'insufficient_evidence_ids',
+                    'message': f'used_evidence_ids 不足：至少需要 {min_required} 条',
+                }
+            )
+            continue
+        if dim_evidence_ids and not set(used_evidence_ids).issubset(dim_evidence_ids):
+            report['rejected_overrides'].append(
+                {
+                    **rejection_base,
+                    'reason': 'evidence_id_not_in_dimension',
+                    'message': 'used_evidence_ids 含不属于当前维度 evidence 的证据',
+                }
+            )
+            continue
+
+        override_explanation = _trim_explanation(raw_override.get('explanation'))
+        if not override_explanation:
+            override_explanation = _trim_explanation(reason_templates.get(reason_code))
+        if not override_explanation:
+            override_explanation = f'原因码 {reason_code} 满足覆盖策略。'
+
+        dim_result['status'] = proposed_status
+        dim_result['risk_level'] = 'none' if proposed_status == 'pass' else dim_result.get('risk_level', 'medium')
+        dim_result['explanation'] = f'模型裁决通过：{override_explanation}'
+        dim_result['confidence'] = round(confidence, 4)
+
+        report['applied_overrides'].append(
+            {
+                'dimension': dim_name,
+                'before_status': before_status,
+                'after_status': proposed_status,
+                'reason_code': reason_code,
+                'confidence': round(confidence, 4),
+                'used_evidence_ids': used_evidence_ids,
+            }
+        )
+
+    if report['applied_overrides']:
+        report['mode'] = 'hybrid_applied'
+    elif report['rejected_overrides']:
+        report['mode'] = 'hybrid_rejected'
+    else:
+        report['mode'] = 'hybrid_no_effect'
+
+    return adjusted, report
+
+
 def derive_risk_dims(dimension_results: Dict[str, Any]) -> List[str]:
     return [
         dim_name
@@ -1030,16 +1484,33 @@ def finalize_qc_result(
     scoring_policy: Optional[Dict[str, Any]] = None,
     scoring_policy_path: Optional[str] = None,
     poi_type_hint: Optional[Any] = None,
+    model_judgement: Optional[Dict[str, Any]] = None,
+    hybrid_policy: Optional[Dict[str, Any]] = None,
+    hybrid_policy_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     finalized = copy.deepcopy(qc_result or {})
     resolved_poi_type_hint = poi_type_hint
     if resolved_poi_type_hint is None:
         resolved_poi_type_hint = finalized.get('poi_type')
     finalized.pop('poi_type', None)
+    finalized.pop('adjudication', None)
     normalized_dimensions = normalize_dimension_results(
         finalized.get('dimension_results', {}),
         poi_type_hint=resolved_poi_type_hint,
     )
+
+    if model_judgement is not None:
+        resolved_hybrid_policy = hybrid_policy or load_hybrid_policy(hybrid_policy_path)
+        normalized_dimensions, adjudication_report = apply_model_adjudication(
+            normalized_dimensions,
+            model_judgement=model_judgement,
+            hybrid_policy=resolved_hybrid_policy,
+            task_id=finalized.get('task_id'),
+        )
+        normalized_dimensions['evidence_sufficiency'] = _derive_evidence_sufficiency(normalized_dimensions)
+        _recompute_downgrade_consistency(normalized_dimensions)
+        finalized['adjudication'] = adjudication_report
+
     finalized['dimension_results'] = normalized_dimensions
 
     resolved_scoring_policy = scoring_policy or load_scoring_policy(scoring_policy_path)

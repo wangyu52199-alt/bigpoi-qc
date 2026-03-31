@@ -1,5 +1,49 @@
 # CHANGELOG
 
+## [2.4.2] - 2026-03-31
+
+### 调整
+- `scripts/result_persister.py` 新增运行时配置读取：优先读取 `qc_runtime.json` 的 `result_dir` 作为持久化路径
+- 当 `strict_result_dir=true` 时，持久化忽略外部传入 `output_dir`，强制写入配置路径
+
+### 文档
+- `SKILL.md` 更新到 `v2.4.2`，补充持久化路径优先级与 `strict_result_dir` 语义
+
+## [2.4.1] - 2026-03-30
+
+### 调整
+- Hybrid 硬冲突判定从“关键词优先”升级为“结构化优先”：
+- `scripts/result_contract.py` 在 `apply_model_adjudication()` 中，优先使用维度结果的 `issue_code` 与 `hard_conflict` 判定是否可覆盖
+- 仅当结构化字段缺失时，才回退到 explanation 关键词识别，兼容历史结果
+
+### 兼容性
+- `config/hybrid_policy.json` 新增 `hard_conflict_issue_codes` 配置，按维度声明硬冲突 issue_code 白名单
+- `schema/qc_result.schema.json` 的核心维度结果新增可选字段：`issue_code`、`hard_conflict`
+- `scripts/result_validator.py` 新增 `issue_code/hard_conflict` 类型校验与约束校验（`hard_conflict=true` 时不得为 `pass`）
+
+## [2.4.0] - 2026-03-30
+
+### 新增
+- 新增 `config/hybrid_policy.json`，定义“规则兜底 + 模型裁决”覆盖策略（可覆盖维度、状态迁移、置信度阈值、硬冲突保护、原因码白名单）
+- 新增 `schema/qc_model_judgement.schema.json`，约束模型裁决 DSL 结构（`overrides[]`）
+- 新增 `scripts/hybrid_adjudicator.py`，用于执行“规则初判 + 模型裁决 + finalize 收敛”流程
+
+### 代码
+- `scripts/result_contract.py` 新增 hybrid 能力：
+- 新增 `load_hybrid_policy()` 和策略深合并逻辑
+- 新增 `derive_uncertain_dims()` 与 `apply_model_adjudication()`，仅对争议维度执行可控覆盖
+- 新增硬冲突保护、证据ID归属校验、reason_code 白名单校验、覆盖置信度阈值校验
+- `finalize_qc_result()` 新增参数：`model_judgement`、`hybrid_policy`、`hybrid_policy_path`
+- 当启用模型裁决时，覆盖后自动重算 `evidence_sufficiency` 和 `downgrade_consistency`
+
+### 兼容性
+- `schema/qc_result.schema.json` 新增可选字段 `adjudication`，记录本次 hybrid 覆盖的应用与拒绝明细
+- `scripts/result_validator.py` 新增 `adjudication` 结构校验（可选字段）
+- `scripts/finalize_qc_result.py` 新增 CLI 参数：`--model-judgement`、`--hybrid-policy`
+
+### 文档
+- `SKILL.md` 升级至 `v2.4.0`，补充 hybrid 执行流程和覆盖约束
+
 ## [2.3.15] - 2026-03-30
 
 ### 调整

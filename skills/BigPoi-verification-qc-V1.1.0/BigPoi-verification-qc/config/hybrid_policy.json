@@ -1,0 +1,95 @@
+{
+  "version": "1.0.0",
+  "description": "Hybrid adjudication policy: rule engine first, model only overrides uncertain dimensions.",
+  "enabled": true,
+  "allowed_dimensions": [
+    "name",
+    "address",
+    "administrative",
+    "category"
+  ],
+  "candidate_statuses": [
+    "risk"
+  ],
+  "allowed_transitions": [
+    "risk->pass"
+  ],
+  "min_confidence_default": 0.85,
+  "min_confidence_by_dimension": {
+    "name": 0.88,
+    "address": 0.85,
+    "administrative": 0.85,
+    "category": 0.85
+  },
+  "min_evidence_ids_by_dimension": {
+    "name": 1,
+    "address": 1,
+    "administrative": 1,
+    "category": 1
+  },
+  "allow_override_when_hard_conflict": false,
+  "hard_conflict_issue_codes": {
+    "name": [
+      "all_name_similarity_below_threshold"
+    ],
+    "address": [
+      "address_direct_conflict"
+    ],
+    "administrative": [
+      "administrative_direct_conflict"
+    ],
+    "category": [
+      "typecode_conflict"
+    ]
+  },
+  "allowed_reason_codes": {
+    "name": [
+      "NAME_ALIAS_MATCH",
+      "NAME_PREFIX_SUFFIX_EQUIV"
+    ],
+    "address": [
+      "ADDR_PREFIX_OR_ROADCODE_EQUIV",
+      "ADDR_MAIN_ANCHOR_EQUIV"
+    ],
+    "administrative": [
+      "ADMIN_CITY_INFERRED_SUPPORT"
+    ],
+    "category": [
+      "CATEGORY_SEMANTIC_FALLBACK_STRONG",
+      "CATEGORY_NAME_LEVEL_SUPPORT"
+    ]
+  },
+  "hard_conflict_keywords": {
+    "name": [
+      "硬冲突",
+      "完全不一致",
+      "名称失败"
+    ],
+    "address": [
+      "直接冲突",
+      "门牌号不一致",
+      "道路主干不一致",
+      "城市级",
+      "地址失败"
+    ],
+    "administrative": [
+      "行政区划失败",
+      "城市冲突",
+      "city冲突"
+    ],
+    "category": [
+      "类型失败",
+      "typecode冲突",
+      "类型冲突"
+    ]
+  },
+  "reason_templates": {
+    "NAME_ALIAS_MATCH": "名称别名/简称语义一致，主要实体未发生变化。",
+    "NAME_PREFIX_SUFFIX_EQUIV": "名称仅存在行政层级前后缀差异，核心名称一致。",
+    "ADDR_PREFIX_OR_ROADCODE_EQUIV": "地址仅存在行政前缀或道路编号表达差异，主锚点一致。",
+    "ADDR_MAIN_ANCHOR_EQUIV": "地址主道路与门牌语义一致，附属后缀差异不影响同址判断。",
+    "ADMIN_CITY_INFERRED_SUPPORT": "结构化 city 缺失时，地址/名称/原始字段可稳定支持输入 city。",
+    "CATEGORY_SEMANTIC_FALLBACK_STRONG": "缺失 typecode 时，语义回退信号为 strong，支持类型通过。",
+    "CATEGORY_NAME_LEVEL_SUPPORT": "类型大类与名称层级同时命中，可判定类型一致。"
+  }
+}

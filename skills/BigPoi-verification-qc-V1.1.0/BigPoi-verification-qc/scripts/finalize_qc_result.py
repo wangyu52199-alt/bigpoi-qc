@@ -26,6 +26,13 @@ def _read_payload(input_path: str = None) -> dict:
     return json.load(sys.stdin)
 
 
+def _read_optional_json(path: str = None) -> dict:
+    if not path:
+        return None
+    with open(path, 'r', encoding='utf-8') as handle:
+        return json.load(handle)
+
+
 def _write_payload(payload: dict, output_path: str = None) -> None:
     if output_path:
         with open(output_path, 'w', encoding='utf-8') as handle:
@@ -48,13 +55,26 @@ def main() -> int:
         default=None,
         help='可选：输入 poi_type，用于在缺失 typecode 时自动补齐 category_fallback_support',
     )
+    parser.add_argument(
+        '--model-judgement',
+        default=None,
+        help='可选：模型维度裁决 DSL JSON 文件路径',
+    )
+    parser.add_argument(
+        '--hybrid-policy',
+        default=None,
+        help='可选：hybrid 裁决策略路径；不传时使用默认 config/hybrid_policy.json',
+    )
     args = parser.parse_args()
 
     payload = _read_payload(args.input)
+    model_judgement = _read_optional_json(args.model_judgement)
     finalized = finalize_qc_result(
         payload,
         scoring_policy_path=args.scoring_policy,
         poi_type_hint=args.poi_type,
+        model_judgement=model_judgement,
+        hybrid_policy_path=args.hybrid_policy,
     )
     _write_payload(finalized, args.output)
     return 0

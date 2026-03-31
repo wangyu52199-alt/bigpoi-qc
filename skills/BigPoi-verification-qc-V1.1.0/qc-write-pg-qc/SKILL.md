@@ -1,19 +1,19 @@
 ---
 name: qc-write-pg-qc
-description: 从本地化JSON文件读取大POI质检结果，回写到PostgreSQL指定表（v1.2.9 回库时按目录结构定位主质检技能，不依赖固定目录名大小写）
+description: 从本地化JSON文件读取大POI质检结果，回写到PostgreSQL指定表（v1.3.0 新增统一运行时配置文件 qc_runtime.json，支持固定结果路径）
 metadata:
-  version: "1.2.9"
+  version: "1.3.0"
   category: "quality-control"
   tags: ["qc", "database", "persistence"]
 ---
 
-# 大POI质检结果回库技能 v1.2.9
+# 大POI质检结果回库技能 v1.3.0
 
 ## 概述
 
 本技能从上游大POI质检技能本地化存储的JSON文件中读取质检结果，批量回写到PostgreSQL数据库的指定质检表，同时更新该表的质检相关字段（质检结论、评分、风险标识、统计标记）和状态为'已质检'。
 
-**v1.2.9 当前特性**：
+**v1.3.0 当前特性**：
 - 支持灵活指定目标表名，可向不同的表写入数据，默认表名为 `poi_qc_zk`
 - 保留索引缺失时的递归恢复能力，但恢复范围收敛到 `task_id` 目录
 - 重试产生多份结果时，优先选择“通过主质检校验”的最新结果
@@ -22,6 +22,9 @@ metadata:
 - 回库前先调用主质检技能的 `result_contract.py` / `finalize_qc_result.py` 收敛派生字段，再执行 `result_validator.py` 校验
 - 当同时发现正式工作区输出和 `.claude/skills` 下的技能安装目录输出时，优先使用正式工作区结果
 - 加载主质检技能时按目录结构探测，不再依赖 `BigPoi-verification-qc` 固定目录名
+- 主质检技能目录探测兼容 `/workspace/.claude/skills/<skill>`、`/workspace/.openclaw/skills/<skill>` 形态
+- 新增统一运行时配置：优先读取 `config/qc_runtime.json` 的 `result_dir`，用于固定回库读取路径
+- 当 `strict_result_dir=true` 时，忽略外部传入 `result_dir`，并禁用跨目录恢复搜索
 
 ### 主要特性
 
@@ -37,6 +40,8 @@ metadata:
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 1.3.0 | 2026-03-31 | 新增 `qc_runtime.json` 统一路径配置；支持固定 `result_dir` 与 strict 模式，避免回库跨目录误检索 |
+| 1.2.10 | 2026-03-31 | 修复服务器部署在 `.claude/skills`/`.openclaw/skills` 目录形态时主质检技能目录探测失败，导致候选校验报“未找到主质检技能目录” |
 | 1.2.9 | 2026-03-18 | 主质检技能目录定位改为结构探测，兼容 `BigPoi-verification-qc` / `bigpoi-verification-qc` 等不同目录名，修复服务器候选校验失败 |
 | 1.2.8 | 2026-03-17 | `task_id` 搜索时只把能通过主质检结果校验的文件视为合法候选；最新结果无效时，自动回退到较早但合法的结果 |
 | 1.2.7 | 2026-03-17 | 同步主质检技能的统计字段语义：`is_manual_required` 与 `qc_manual_review_required` 统一表示“QC 是否认为需要人工复核” |
@@ -64,6 +69,11 @@ metadata:
 | `result_file` | string | ❌ 可选 | 结果文件完整路径，与 result_dir 二选一 |
 | `result_dir` | string | ❌ 可选 | 结果目录路径，与 result_file 二选一，推荐使用 |
 | `table_name` | string | ❌ 可选 | 目标表名，默认为 `poi_qc_zk`；**v1.1.0 新增** |
+
+运行时路径配置（v1.3.0）：
+- 默认读取 `config/qc_runtime.json`
+- 配置了 `result_dir` 时，作为默认回库目录
+- 配置了 `strict_result_dir=true` 时，外部传入 `result_dir` 会被忽略，且禁用恢复搜索
 
 ### 2. 文件读取模式
 
