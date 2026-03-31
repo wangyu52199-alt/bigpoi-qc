@@ -1,0 +1,20 @@
+{
+  "task_id": "demo_task_id",
+  "model_name": "gpt-5.4",
+  "overrides": [
+    {
+      "dimension": "address",
+      "proposed_status": "pass",
+      "reason_code": "ADDR_PREFIX_OR_ROADCODE_EQUIV",
+      "confidence": 0.91,
+      "used_evidence_ids": [
+        "EVD_20260330T010101Z_001",
+        "EVD_20260330T010101Z_003"
+      ],
+      "explanation": "输入地址与证据地址仅存在行政前缀和道路编号表达差异，主锚点一致。"
+    }
+  ],
+  "metadata": {
+    "note": "模型只能输出维度覆盖建议，不得输出最终 qc_result。"
+  }
+}
