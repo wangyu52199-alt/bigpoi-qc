@@ -1,5 +1,80 @@
 # CHANGELOG
 
+## [2.4.10-stable] - 2026-04-01
+
+### 修复
+- `scripts/result_validator.py` 恢复核心维度证据“信息量”校验：`pass/risk` 维度的 `evidence[]` 不能只含 `evidence_id`，必须包含 `source/data/verification/matching` 中至少一项结构化内容。
+- `SKILL.py` 强化证据契约收敛：当维度证据仅为编号引用或无信息量时，自动替换为输入 `evidence_record` 快照，避免结果通过校验但证据不可审计。
+- `scripts/dsl_executor.py` 与 `scripts/result_contract.py` 统一地址道路锚点规则：对“街道/社区/镇等前缀差异”“`大道` vs `大道中` 路段差异”“路名包含关系（如 `大兴大道` vs `大布沙大兴大道`）”在门牌一致时按同址软支持处理，不再误判为道路冲突。
+- `scripts/result_contract.py` 修复 `location` 语义降级后的证据契约：`no_valid_coordinate_evidence` 从 `fail` 调整为 `risk` 时，若坐标证据为空会自动补入名称/地址维度的有效证据快照，避免 `risk + evidence=[]` 被校验拒绝。
+- `scripts/result_contract.py` 调整 `statistics_flags` 人工标记口径：`is_manual_required` / `qc_manual_review_required` 改为按最终 `qc_status` 计算（`risky`、`unqualified` 均为 `true`），以匹配“风险与不通过都需人工查看”的运营策略。
+- `scripts/result_contract.py` 收敛 `risky` 触发口径：将 `address/location/category` 的部分 advisory risk（如软地址匹配、可容忍坐标偏移、仅文本类型支撑）自动提升为 `pass`，减少“可自动通过但被标记为 risky”的情况。
+- `scripts/result_contract.py` 调整 `qc_status` 聚合：`downgrade_consistency.issue_type=unnecessary_downgrade` 不再单独拉低整体状态；仅阻塞性降级冲突（如 `missed_downgrade`）参与 `risky` 判定。
+- `scripts/result_contract.py` 调整 `risk_dims/has_risk` 聚合：`downgrade_consistency.issue_type=unnecessary_downgrade` 不再计入风险维度，避免出现 `qc_status=qualified` 但 `risk_dims` 非空的语义冲突。
+- `scripts/result_contract.py` 在语义调整后重算 `evidence_sufficiency`，避免前置计算与最终维度状态不一致。
+
+## [2.4.9-stable] - 2026-04-01
+
+### 调整
+- `scripts/result_contract.py` 为 `location` 新增“离群点名称相关性”判断：
+- 仅当离群点名称与目标 POI 构成同目标高置信相关时，才保留离群风险
+- 若近距离同目标证据占优且离群点名称不相关，可由 `risk/fail` 提升为 `pass`
+- 将 `scripts/dsl_executor.py`、`scripts/evidence_preprocessor.py` 正式同步到 `BigPoi-verification-qc-stable/scripts/`，避免依赖分支目录执行
+- `SKILL.py` 默认启用 stable 目录内 DSL 核心维度重算（可通过 `prefer_dsl_core_dimensions=false` 显式关闭）
+- `scripts/dsl_executor.py` 调整证据截断策略：命中 `location_distance` 时按距离升序优先保留近距离证据，避免离群证据被优先截入
+
+## [2.4.8-stable] - 2026-04-01
+
+### 调整
+- `scripts/result_contract.py` 调整人工核实触发逻辑：由“任一 core 维度 risk/fail 即触发”改为“仅 fail / high risk /硬冲突 issue_code 触发”，降低降级一致性误伤
+- `scripts/result_contract.py` 增强 `location` 语义收敛：
+- 对 `no_valid_coordinate_evidence` 场景，若名称与地址已通过，则由 `fail` 降为 `risk`
+- 对坐标离群判定引入“名称相关性过滤 + 多数簇一致”规则，降低低相关离群点影响
+- `scripts/result_contract.py` 放宽 `existence` 语义兜底：当 `name=pass` 且其他事实维度存在稳定通过时，可提升存在性判定
+- `scripts/result_contract.py` 增强 `address` 语义复核：`fail/risk` 都可进入同址语义校验，支持按名称相似度过滤低相关地址证据
+
+## [2.4.7-stable] - 2026-04-01
+
+### 调整
+- `scripts/result_contract.py` 新增地址语义同址评估：对 `address` 的软匹配/单条精确低置信场景，执行结构化语义补判（同址关系、冲突点、置信度）后再决策
+- `scripts/result_contract.py` 增强坐标抗离群：支持“单个中距离离群”与“单个 >500m 离群但多数近距离聚合”场景的稳健放宽，避免单点离群一票否决
+- `scripts/result_contract.py` 新增 `administrative/category` 语义放宽：对边界 `risk/fail` 场景按多信号一致性降级为 `risk` 或提升为 `pass`
+- `scripts/result_contract.py` 调整 `evidence_sufficiency`：核心事实维度全 `pass` 且单条证据置信度足够时，不再重复降级
+- `rules/decision_tables.json` 调整 `location` 与 `category` 分级：
+- `location` 中 `>500m` 但存在近距离支持时由直接 `fail` 调整为 `risk`
+- `category` 中“仅语义回退冲突”从 `fail` 下调为 `risk`，`fail` 保留给 typecode 直接硬冲突
+
+## [2.4.6-stable] - 2026-04-01
+
+### 调整
+- 新增存在性语义兜底：当 `name=pass` 且（`address=pass` 或 `location=pass`）并且不存在高置信存在性反证时，`existence` 可从 `risk` 提升为 `pass`
+- `existence` 不再仅由平均置信度单点驱动，降低“事实维度已通过但存在性仍 risk”的不合理情况
+
+## [2.4.5-stable] - 2026-04-01
+
+### 调整
+- 收敛地址维度 `address_fail_hard_conflict` 触发条件，避免“单条冲突证据”直接将地址判定为 `fail`
+- 地址 `fail` 现在要求“冲突证据占主导，且无精确/主地址语义支撑”才触发，降低噪声证据误伤
+
+## [2.4.4-stable] - 2026-04-01
+
+### 修复
+- 修复“全量重判”场景下部分维度 `status=risk/pass` 但 `evidence=[]` 导致 `ResultValidator` 拒绝的问题
+- 在 `SKILL.py` 增加维度证据契约兜底：
+- 当维度为 `pass/risk` 且无证据时，优先从输入 `evidence_record` 自动补齐证据快照
+- 若确实无可用证据，则将该维度自动降级为 `fail`，避免非法结果继续流转
+
+## [2.4.3-stable] - 2026-04-01
+
+### 新增
+- 创建稳定分支目录 `BigPoi-verification-qc-stable`，完整继承当前规则、阈值、schema、评分策略与持久化逻辑
+- 保留争议维度大模型裁决（hybrid）能力：`config/hybrid_policy.json`、`schema/qc_model_judgement.schema.json`、`scripts/hybrid_adjudicator.py`
+
+### 调整
+- 技能元数据名称调整为 `bigpoi-verification-qc-stable`
+- 版本标识调整为 `v2.4.3-stable`
+- 统一继续使用单入口 `SKILL.py`（程序收敛 + 校验 + 持久化），避免临时脚本旁路执行
+
 ## [2.4.3] - 2026-04-01
 
 ### 新增

@@ -566,9 +566,25 @@ def _select_evidence_by_policy(
     for evidence in _select_items(selector, payload):
         if _evaluate_condition(where, payload, evidence, metrics, dimension_results, derived):
             selected.append(copy.deepcopy(evidence))
-        if len(selected) >= max_items_value:
-            break
-    return selected
+
+    # location 场景优先保留近距离证据，避免证据截断导致“离群点主导”。
+    def _location_sort_key(item: Dict[str, Any]) -> Tuple[float, float]:
+        matching = _copy_dict(item.get('matching'))
+        distance = _safe_float(matching.get('location_distance'))
+        similarity = _safe_float(matching.get('name_similarity'))
+        if distance is None:
+            distance = float('inf')
+        if similarity is None:
+            similarity = 0.0
+        return (distance, -similarity)
+
+    if any(
+        _safe_float(_copy_dict(item.get('matching')).get('location_distance')) is not None
+        for item in selected
+    ):
+        selected.sort(key=_location_sort_key)
+
+    return selected[:max_items_value]
 
 
 def _derive_result_confidence(evidence: List[Dict[str, Any]], fallback: float = 0.0) -> float:

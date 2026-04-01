@@ -274,6 +274,15 @@ class ResultValidator:
             errors.append(f"维度 {dim_name} 的 evidence 必须是数组")
         elif status in ['pass', 'risk'] and len(evidence) == 0:
             errors.append(f"维度 {dim_name} 为 {status} 时 evidence 不能为空数组")
+        elif status in ['pass', 'risk']:
+            for index, evidence_item in enumerate(evidence):
+                if not isinstance(evidence_item, dict):
+                    errors.append(f"维度 {dim_name} 的 evidence[{index}] 必须是对象")
+                    continue
+                if not self._is_informative_evidence_item(evidence_item):
+                    errors.append(
+                        f"维度 {dim_name} 的 evidence[{index}] 仅包含证据编号，缺少 source/data/verification/matching 内容"
+                    )
 
         if not isinstance(related_rules, list):
             errors.append(f"维度 {dim_name} 的 related_rules 必须是数组")
@@ -575,6 +584,14 @@ class ResultValidator:
     @staticmethod
     def _is_probability(value: Any) -> bool:
         return isinstance(value, (int, float)) and 0 <= float(value) <= 1
+
+    @staticmethod
+    def _is_informative_evidence_item(item: Dict[str, Any]) -> bool:
+        for key in ['source', 'data', 'verification', 'matching']:
+            value = item.get(key)
+            if isinstance(value, dict) and len(value) > 0:
+                return True
+        return False
 
 
 if __name__ == '__main__':

@@ -50,6 +50,20 @@ ROAD_PATTERN = re.compile(r'([A-Za-z0-9\u4e00-\u9fff]{1,24}(?:路|街|巷|大道
 HOUSE_NUMBER_PATTERN = re.compile(r'(\d+)\s*号')
 ROAD_CODE_PATTERN = re.compile(r'([gs]\d{2,4})', re.IGNORECASE)
 CITY_PATTERN = re.compile(r'([\u4e00-\u9fff]{1,12}市)')
+ROAD_SEGMENT_SUFFIX_PATTERN = re.compile(r'(大道|路|街|巷|国道|省道|县道|道)(?:中段|东段|西段|南段|北段|中|东|西|南|北)$')
+ROAD_LOCALITY_BREAK_TOKENS = (
+    '街道',
+    '社区',
+    '镇',
+    '乡',
+    '村',
+    '新区',
+    '开发区',
+    '工业区',
+    '工业园',
+    '园区',
+    '片区',
+)
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -140,10 +154,22 @@ def _extract_house_number(address: str) -> Optional[str]:
 
 
 def _extract_road_anchor(address: str) -> Optional[str]:
-    match = ROAD_PATTERN.search(str(address or ''))
-    if not match:
+    text = str(address or '').strip()
+    if not text:
         return None
-    return _normalize_address_for_compare(match.group(1))
+    matches = [match.group(1) for match in ROAD_PATTERN.finditer(text)]
+    if not matches:
+        return None
+    road_text = matches[-1]
+    road_text = _strip_admin_prefix(road_text)
+    for token in ROAD_LOCALITY_BREAK_TOKENS:
+        if token not in road_text:
+            continue
+        tail = road_text.rsplit(token, 1)[-1].strip()
+        if tail:
+            road_text = tail
+    normalized = _normalize_address_for_compare(road_text)
+    return normalized or None
 
 
 def _extract_road_code(address: str) -> Optional[str]:
@@ -152,6 +178,14 @@ def _extract_road_code(address: str) -> Optional[str]:
     if not match:
         return None
     return match.group(1).lower()
+
+
+def _normalize_road_anchor_for_match(anchor: str) -> str:
+    text = str(anchor or '').strip()
+    if not text:
+        return ''
+    text = ROAD_SEGMENT_SUFFIX_PATTERN.sub(r'\1', text)
+    return _normalize_address_for_compare(text)
 
 
 def _strip_admin_prefix(address: str) -> str:
@@ -190,6 +224,19 @@ def _address_match_level(record_address: str, evidence_address: str) -> str:
     record_road = _extract_road_anchor(record_text)
     evidence_road = _extract_road_anchor(evidence_text)
     if record_road and evidence_road and record_road != evidence_road:
+        record_road_norm = _normalize_road_anchor_for_match(record_road)
+        evidence_road_norm = _normalize_road_anchor_for_match(evidence_road)
+        if record_road_norm and evidence_road_norm:
+            road_semantic_same = (
+                record_road_norm == evidence_road_norm
+                or record_road_norm in evidence_road_norm
+                or evidence_road_norm in record_road_norm
+            )
+            if road_semantic_same and (
+                (record_house and evidence_house and record_house == evidence_house)
+                or (not record_house or not evidence_house)
+            ):
+                return 'main_address_only'
         return 'street_conflict'
 
     record_core = _normalize_address_for_compare(_strip_admin_prefix(record_text))
@@ -566,9 +613,25 @@ def _select_evidence_by_policy(
     for evidence in _select_items(selector, payload):
         if _evaluate_condition(where, payload, evidence, metrics, dimension_results, derived):
             selected.append(copy.deepcopy(evidence))
-        if len(selected) >= max_items_value:
-            break
-    return selected
+
+    # location 场景优先保留近距离证据，避免证据截断导致“离群点主导”。
+    def _location_sort_key(item: Dict[str, Any]) -> Tuple[float, float]:
+        matching = _copy_dict(item.get('matching'))
+        distance = _safe_float(matching.get('location_distance'))
+        similarity = _safe_float(matching.get('name_similarity'))
+        if distance is None:
+            distance = float('inf')
+        if similarity is None:
+            similarity = 0.0
+        return (distance, -similarity)
+
+    if any(
+        _safe_float(_copy_dict(item.get('matching')).get('location_distance')) is not None
+        for item in selected
+    ):
+        selected.sort(key=_location_sort_key)
+
+    return selected[:max_items_value]
 
 
 def _derive_result_confidence(evidence: List[Dict[str, Any]], fallback: float = 0.0) -> float:

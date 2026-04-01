@@ -1,6 +1,6 @@
 ---
-name: bigpoi-verification-qc
-version: 2.4.3
+name: bigpoi-verification-qc-stable
+version: 2.4.10-stable
 description:
   对上游大POI核实结果进行确定性质量检验，官方输入固定为上游平铺结构。重点检查名称、坐标、地址、行政区划、类型、存在性、证据充分性，以及人工核实降级是否一致。
   输出结构化、可审计、可复算的质检结果。
@@ -22,7 +22,7 @@ metadata:
   validators_path: ./scripts/result_validator.py
 -------------
 
-# QC Skill · Big POI Verification v2.4.3
+# QC Skill · Big POI Verification v2.4.10-stable
 
 ## 1. 技能目标
 
