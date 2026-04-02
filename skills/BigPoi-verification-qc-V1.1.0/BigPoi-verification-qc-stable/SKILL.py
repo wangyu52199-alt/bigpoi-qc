@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BigPOI QC Skill v2.4.10-stable - 单入口执行器
+BigPOI QC Skill v2.4.12-stable - 单入口执行器
 
 固定流程：
 1. 优先按 DSL 重算核心维度（R1-R6），仅在显式关闭时接收模型维度草稿
