@@ -9,8 +9,10 @@
 3. 对常用证据字段做轻量补齐，便于规则稳定消费
 """
 
+import ast
 import copy
 import re
+from difflib import SequenceMatcher
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
@@ -130,6 +132,36 @@ REGISTRY_SOURCE_HINTS = ('国家企业信用信息公示系统', '企查查', '�
 OTA_SOURCE_HINTS = ('携程', '去哪儿', '飞猪', '同程', 'ctrip', 'qunar', 'fliggy', 'ly.com')
 REVIEW_SOURCE_HINTS = ('大众点评', '点评', '评价', '评论', 'dianping')
 PLATFORM_SOURCE_HINTS = ('美团', '抖音', '快手', 'meituan', 'douyin', 'kuaishou')
+SUBJECT_TYPE_KEYWORDS = {
+    'government': ('人民政府', '政府'),
+    'community_committee': ('居委会', '居民委员会', '社区居委会'),
+    'village_committee': ('村委会', '村民委员会'),
+    'police_station': ('派出所',),
+    'police': ('公安局', '公安分局', '公安机关'),
+    'court': ('法院', '人民法院'),
+    'procuratorate': ('检察院', '人民检察院'),
+    'hospital': ('医院', '卫生院', '医疗中心'),
+    'school': ('学校', '中学', '小学', '大学', '学院'),
+}
+GENERIC_SUBJECT_WORDS = (
+    '街道',
+    '社区',
+    '镇',
+    '乡',
+    '村',
+    '广东省',
+    '广西',
+    '北京市',
+    '上海市',
+    '天津市',
+    '重庆市',
+    '自治区',
+    '特别行政区',
+    '省',
+    '市',
+    '区',
+    '县',
+)
 
 
 def _copy_json_dict(value: Any) -> Dict[str, Any]:
@@ -186,6 +218,123 @@ def _normalize_text(value: Any) -> str:
 
 def _normalize_source_type_text(value: Any) -> str:
     return _normalize_text(value)
+
+
+def _normalize_address_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if (
+            (text.startswith('{') and text.endswith('}'))
+            or (text.startswith('[') and text.endswith(']'))
+        ):
+            try:
+                parsed = ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                return text
+            nested = _normalize_address_text(parsed)
+            return nested or text
+        return text
+
+    if isinstance(value, dict):
+        candidates: List[Any] = [
+            value.get('full'),
+            value.get('address'),
+        ]
+        street = value.get('street')
+        street_number = value.get('street_number')
+        if isinstance(street, str) and street.strip():
+            street_text = street.strip()
+            candidates.append(street_text)
+            if isinstance(street_number, str) and street_number.strip():
+                street_number_text = street_number.strip()
+                if street_number_text not in street_text:
+                    candidates.append(f'{street_text}{street_number_text}')
+        for candidate in candidates:
+            normalized = _normalize_address_text(candidate)
+            if normalized:
+                return normalized
+        return None
+
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            normalized = _normalize_address_text(item)
+            if normalized:
+                return normalized
+        return None
+
+    text = str(value).strip()
+    return text or None
+
+
+def _name_similarity(left_name: str, right_name: str) -> float:
+    left = _normalize_text(left_name)
+    right = _normalize_text(right_name)
+    if not left or not right:
+        return 0.0
+    if left == right:
+        return 1.0
+    ratio = SequenceMatcher(None, left, right).ratio()
+    if left in right or right in left:
+        ratio = max(ratio, 0.9)
+    return max(0.0, min(1.0, float(ratio)))
+
+
+def _detect_subject_type(name_text: str, category_text: str = '') -> Optional[str]:
+    merged = f'{name_text} {category_text}'.strip()
+    if not merged:
+        return None
+    for subject_type, keywords in SUBJECT_TYPE_KEYWORDS.items():
+        if _contains_any_keyword(merged, keywords):
+            return subject_type
+    return None
+
+
+def _extract_core_subject_anchor(name_text: str) -> str:
+    text = str(name_text or '').strip()
+    if not text:
+        return ''
+    for token in GENERIC_SUBJECT_WORDS:
+        text = text.replace(token, '')
+    for keywords in SUBJECT_TYPE_KEYWORDS.values():
+        for keyword in keywords:
+            text = text.replace(keyword, '')
+    text = re.sub(r'[\s\-\_()（）\[\]【】,，、.;；:：/\\]+', '', text)
+    return text
+
+
+def _is_subject_mismatch(record: Dict[str, Any], evidence: Dict[str, Any]) -> Optional[str]:
+    record_name = str(record.get('name') or '')
+    data = _copy_json_dict(evidence.get('data'))
+    raw_data = _copy_json_dict(data.get('raw_data'))
+    raw_core = _copy_json_dict(raw_data.get('data'))
+    evidence_name = str(_first_non_empty(data.get('name'), raw_core.get('name')) or '')
+    if not record_name or not evidence_name:
+        return None
+
+    data_category = str(_first_non_empty(data.get('category'), raw_core.get('type')) or '')
+    record_subject = _detect_subject_type(record_name, '')
+    evidence_subject = _detect_subject_type(evidence_name, data_category)
+
+    similarity = _name_similarity(record_name, evidence_name)
+    record_anchor = _extract_core_subject_anchor(record_name)
+    evidence_anchor = _extract_core_subject_anchor(evidence_name)
+
+    if record_subject and evidence_subject and record_subject != evidence_subject:
+        # 主体类型明确且冲突时直接过滤，避免“居委会 vs 派出所”误参与维度比较。
+        return 'subject_type_mismatch'
+
+    # 无法明确类型时，仍用名称相似度 + 主体锚点做兜底过滤。
+    if similarity < 0.45:
+        if not record_anchor or not evidence_anchor:
+            return 'subject_name_mismatch'
+        if record_anchor not in evidence_anchor and evidence_anchor not in record_anchor:
+            return 'subject_name_mismatch'
+    return None
 
 
 def _contains_any_keyword(text: str, keywords: Tuple[str, ...]) -> bool:
@@ -276,6 +425,10 @@ def _invalid_evidence_reason(record: Dict[str, Any], evidence: Dict[str, Any]) -
     ):
         return 'government_affiliated_facility_not_primary_entity'
 
+    subject_mismatch_reason = _is_subject_mismatch(record, evidence)
+    if subject_mismatch_reason is not None:
+        return subject_mismatch_reason
+
     return None
 
 
@@ -295,9 +448,14 @@ def _normalize_evidence_item(item: Dict[str, Any]) -> Dict[str, Any]:
     verification['confidence'] = confidence
     evidence['verification'] = verification
 
-    address_value = _first_non_empty(data.get('address'), _copy_json_dict(data.get('location')).get('address'), raw_core.get('address'))
-    if address_value is not None:
-        data['address'] = str(address_value)
+    address_value = _first_non_empty(
+        data.get('address'),
+        _copy_json_dict(data.get('location')).get('address'),
+        raw_core.get('address'),
+    )
+    normalized_address = _normalize_address_text(address_value)
+    if normalized_address is not None:
+        data['address'] = normalized_address
 
     coordinates = _copy_json_dict(data.get('coordinates'))
     location = _copy_json_dict(data.get('location'))
@@ -343,6 +501,16 @@ def preprocess_evidence_record(record: Dict[str, Any], evidence_record: Iterable
 
         item = _normalize_evidence_item(raw_item)
         reason = _invalid_evidence_reason(record, item)
+        matching = _copy_json_dict(item.get('matching'))
+        if reason in {'subject_type_mismatch', 'subject_name_mismatch'}:
+            matching['subject_consistent'] = False
+        else:
+            data_name = str(_copy_json_dict(item.get('data')).get('name') or '')
+            if str(record.get('name') or '').strip() and data_name.strip():
+                matching['subject_consistent'] = True
+        if matching:
+            item['matching'] = matching
+
         if reason is None:
             retained.append(item)
             continue
@@ -380,4 +548,3 @@ def preprocess_flat_input(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict
     retained, summary = preprocess_evidence_record(record, evidence_record)
     normalized['evidence_record'] = retained
     return normalized, summary
-

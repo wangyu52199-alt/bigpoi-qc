@@ -9,6 +9,7 @@ BigPOI 质检结果契约计算模块。
 3. 将可反算字段从模型自由输出收敛为程序确定性输出
 """
 
+import ast
 import copy
 import json
 import re
@@ -71,6 +72,9 @@ ROAD_PATTERN = re.compile(r'([A-Za-z0-9\u4e00-\u9fff]{1,24}(?:路|街|巷|大道
 HOUSE_NUMBER_PATTERN = re.compile(r'(\d+)\s*号')
 ROAD_CODE_PATTERN = re.compile(r'([gs]\d{2,4})')
 ROAD_SEGMENT_SUFFIX_PATTERN = re.compile(r'(大道|路|街|巷|国道|省道|县道|道)(?:中段|东段|西段|南段|北段|中|东|西|南|北)$')
+ADMIN_PREFIX_PATTERN = re.compile(
+    r'^(?:中国|[\u4e00-\u9fff]{2,9}(?:省|市|自治区|特别行政区|地区|盟|自治州|州|县|区|镇|乡|街道))+'
+)
 ROAD_LOCALITY_BREAK_TOKENS = (
     '街道',
     '社区',
@@ -83,6 +87,19 @@ ROAD_LOCALITY_BREAK_TOKENS = (
     '工业园',
     '园区',
     '片区',
+)
+ROAD_CONNECTOR_TOKENS = ('与', '和', '及', '、')
+ROAD_NOISE_SUFFIX_KEYWORDS = (
+    '街道办事处',
+    '街道办',
+    '办事处',
+    '居民委员会',
+    '居委会',
+    '村民委员会',
+    '村委会',
+    '村委',
+    '社区',
+    '村',
 )
 CITY_NAME_PATTERN = re.compile(r'([\u4e00-\u9fff]{2,12}市)')
 LOCATION_AUXILIARY_KEYWORDS = (
@@ -811,11 +828,62 @@ def _extract_addresses(evidence_items: List[Dict[str, Any]]) -> List[str]:
         data = item.get('data')
         if not isinstance(data, dict):
             continue
-        address = data.get('address')
-        if not isinstance(address, str) or not address.strip():
+        address = _normalize_address_text(data.get('address'))
+        if not address:
             continue
         addresses.append(address.strip())
     return addresses
+
+
+def _normalize_address_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if (
+            (text.startswith('{') and text.endswith('}'))
+            or (text.startswith('[') and text.endswith(']'))
+        ):
+            try:
+                parsed = ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                return text
+            nested = _normalize_address_text(parsed)
+            return nested or text
+        return text
+
+    if isinstance(value, dict):
+        candidates: List[Any] = [
+            value.get('full'),
+            value.get('address'),
+        ]
+        street = value.get('street')
+        street_number = value.get('street_number')
+        if isinstance(street, str) and street.strip():
+            street_text = street.strip()
+            candidates.append(street_text)
+            if isinstance(street_number, str) and street_number.strip():
+                street_number_text = street_number.strip()
+                if street_number_text not in street_text:
+                    candidates.append(f'{street_text}{street_number_text}')
+        for candidate in candidates:
+            normalized = _normalize_address_text(candidate)
+            if normalized:
+                return normalized
+        return None
+
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            normalized = _normalize_address_text(item)
+            if normalized:
+                return normalized
+        return None
+
+    text = str(value).strip()
+    return text or None
 
 
 def _normalize_address_for_compare(text: str) -> str:
@@ -833,6 +901,12 @@ def _normalize_address_for_compare(text: str) -> str:
     for token in ('省', '市', '区', '县', '镇', '乡', '街道'):
         normalized = normalized.replace(token, '')
     normalized = normalized.replace('人民西路', '人民路')
+    normalized = normalized.replace('村民委员会', '村')
+    normalized = normalized.replace('村委会', '村')
+    normalized = normalized.replace('村委', '村')
+    normalized = normalized.replace('居民委员会', '社区')
+    normalized = normalized.replace('居委会', '社区')
+    normalized = normalized.replace('居委', '社区')
     normalized = normalized.replace('国道', 'g')
     normalized = re.sub(r'g\s*(\d+)', r'g\1', normalized)
     normalized = re.sub(r'(\d+)g', r'g\1', normalized)
@@ -860,10 +934,7 @@ def _extract_informative_addresses(evidence_items: List[Dict[str, Any]]) -> List
         data = item.get('data')
         if not isinstance(data, dict):
             continue
-        address = data.get('address')
-        if not isinstance(address, str):
-            continue
-        address = address.strip()
+        address = _normalize_address_text(data.get('address'))
         if not address or _is_low_information_address(address):
             continue
         informative.append(address)
@@ -878,16 +949,32 @@ def _extract_informative_address_confidences(evidence_items: List[Dict[str, Any]
         data = item.get('data')
         if not isinstance(data, dict):
             continue
-        address = data.get('address')
-        if not isinstance(address, str):
-            continue
-        address = address.strip()
+        address = _normalize_address_text(data.get('address'))
         if not address or _is_low_information_address(address):
             continue
         confidence = _evidence_confidence(item)
         if confidence > 0:
             values.append(confidence)
     return values
+
+
+def _has_authoritative_hard_address_conflict(evidence_items: List[Dict[str, Any]]) -> bool:
+    for item in evidence_items:
+        if not isinstance(item, dict):
+            continue
+        matching = item.get('matching')
+        if not isinstance(matching, dict):
+            continue
+        level = str(matching.get('address_match_level') or '').strip().lower()
+        if level not in {'house_number_conflict', 'city_district_conflict'}:
+            continue
+        confidence = _evidence_confidence(item)
+        if confidence < 0.9:
+            continue
+        source_type = _evidence_source_type(item)
+        if source_type in AUTHORITATIVE_SOURCE_TYPES or source_type in {'government', 'official_data', 'official_registry'}:
+            return True
+    return False
 
 
 def _filter_address_semantic_evidence(evidence_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -898,6 +985,8 @@ def _filter_address_semantic_evidence(evidence_items: List[Dict[str, Any]]) -> L
         matching = item.get('matching')
         if not isinstance(matching, dict):
             filtered.append(item)
+            continue
+        if matching.get('subject_consistent') is False:
             continue
         similarity = _safe_float(matching.get('name_similarity'))
         if similarity is None or similarity >= 0.6:
@@ -964,6 +1053,29 @@ def _collect_city_signals(evidence_items: List[Dict[str, Any]]) -> Dict[str, Dic
     return city_support
 
 
+def _dominant_address_cluster_indices(addresses: List[str]) -> List[int]:
+    if not addresses:
+        return []
+    if len(addresses) == 1:
+        return [0]
+
+    best_cluster: List[int] = [0]
+    best_count = 1
+    for base_idx, base_addr in enumerate(addresses):
+        cluster = [base_idx]
+        for candidate_idx, candidate_addr in enumerate(addresses):
+            if base_idx == candidate_idx:
+                continue
+            if _are_two_addresses_semantically_consistent(base_addr, candidate_addr):
+                cluster.append(candidate_idx)
+        cluster = sorted(set(cluster))
+        if len(cluster) > best_count:
+            best_cluster = cluster
+            best_count = len(cluster)
+
+    return best_cluster
+
+
 def _assess_address_same_place(
     addresses: List[str],
     confidences: List[float],
@@ -976,6 +1088,11 @@ def _assess_address_same_place(
             'conflict_points': '缺少可用于语义比对的地址信息。',
         }
 
+    cluster_indices = _dominant_address_cluster_indices(addresses)
+    required_cluster_size = max(2, (len(addresses) + 1) // 2)
+    if len(addresses) == 1:
+        required_cluster_size = 1
+
     if not _are_addresses_semantically_consistent(addresses):
         return {
             'same_place': False,
@@ -984,24 +1101,39 @@ def _assess_address_same_place(
             'conflict_points': _describe_address_conflict(addresses),
         }
 
+    if len(cluster_indices) < required_cluster_size:
+        return {
+            'same_place': False,
+            'confidence': 0.0,
+            'semantic_relation': 'hard_conflict',
+            'conflict_points': _describe_address_conflict(addresses),
+        }
+
+    clustered_addresses = [addresses[index] for index in cluster_indices if 0 <= index < len(addresses)]
+    clustered_confidences = [
+        confidences[index]
+        for index in cluster_indices
+        if 0 <= index < len(confidences)
+    ]
+
     road_anchors = [
         _normalize_address_for_compare(anchor)
-        for anchor in (_extract_road_anchor(addr) for addr in addresses)
+        for anchor in (_extract_road_anchor(addr) for addr in clustered_addresses)
         if isinstance(anchor, str) and anchor.strip()
     ]
     house_numbers = [
         number
-        for number in (_extract_house_number(addr) for addr in addresses)
+        for number in (_extract_house_number(addr) for addr in clustered_addresses)
         if isinstance(number, str) and number.strip()
     ]
 
     has_shared_road_anchor = len(road_anchors) >= 1 and len(set(road_anchors)) == 1
     has_house_number = len(house_numbers) >= 1
     has_consistent_house_number = len(house_numbers) >= 1 and len(set(house_numbers)) == 1
-    has_road_code_signal = any(_extract_road_code(addr) for addr in addresses)
+    has_road_code_signal = any(_extract_road_code(addr) for addr in clustered_addresses)
 
-    confidence_base = max(confidences) if confidences else 0.0
-    if len(addresses) >= 2:
+    confidence_base = max(clustered_confidences) if clustered_confidences else (max(confidences) if confidences else 0.0)
+    if len(clustered_addresses) >= 2:
         confidence_base += 0.04
     if has_shared_road_anchor:
         confidence_base += 0.04
@@ -1074,6 +1206,45 @@ def _are_two_addresses_semantically_consistent(base: str, candidate: str) -> boo
     return False
 
 
+def _strip_admin_prefix(address: str) -> str:
+    text = str(address or '').strip()
+    return ADMIN_PREFIX_PATTERN.sub('', text)
+
+
+def _normalize_road_anchor_text(value: str) -> str:
+    text = str(value or '').strip()
+    if not text:
+        return ''
+    text = _strip_admin_prefix(text)
+
+    for token in ROAD_LOCALITY_BREAK_TOKENS:
+        if token not in text:
+            continue
+        head = text.rsplit(token, 1)[0].strip()
+        if head:
+            text = head
+
+    for token in ROAD_CONNECTOR_TOKENS:
+        if token not in text:
+            continue
+        parts = [part.strip() for part in text.split(token) if part.strip()]
+        if parts:
+            text = parts[-1]
+
+    road_end = re.search(r'.*?(?:路|街|巷|大道|国道|省道|县道|道)', text)
+    if road_end:
+        text = road_end.group(0).strip()
+
+    for suffix in ROAD_NOISE_SUFFIX_KEYWORDS:
+        if not text.endswith(suffix):
+            continue
+        stripped = text[:-len(suffix)].strip()
+        if stripped:
+            text = stripped
+
+    return text
+
+
 def _extract_road_anchor(address: str) -> Optional[str]:
     text = str(address or '').strip()
     if not text:
@@ -1081,13 +1252,7 @@ def _extract_road_anchor(address: str) -> Optional[str]:
     matches = [match.group(1) for match in ROAD_PATTERN.finditer(text)]
     if not matches:
         return None
-    road_text = matches[-1].strip()
-    for token in ROAD_LOCALITY_BREAK_TOKENS:
-        if token not in road_text:
-            continue
-        tail = road_text.rsplit(token, 1)[-1].strip()
-        if tail:
-            road_text = tail
+    road_text = _normalize_road_anchor_text(matches[-1])
     return road_text or None
 
 
@@ -1148,12 +1313,9 @@ def _describe_address_conflict(addresses: List[str]) -> str:
 def _are_addresses_semantically_consistent(addresses: List[str]) -> bool:
     if len(addresses) <= 1:
         return True
-    base = addresses[0]
-    for candidate in addresses[1:]:
-        if _are_two_addresses_semantically_consistent(base, candidate):
-            continue
-        return False
-    return True
+    cluster_indices = _dominant_address_cluster_indices(addresses)
+    required_cluster_size = max(2, (len(addresses) + 1) // 2)
+    return len(cluster_indices) >= required_cluster_size
 
 
 def _apply_location_semantic_adjustment(dimension_results: Dict[str, Any]) -> None:
@@ -1355,6 +1517,16 @@ def _apply_address_semantic_adjustment(dimension_results: Dict[str, Any]) -> Non
             return
 
     semantic_evidence = _filter_address_semantic_evidence(evidence)
+    if _has_authoritative_hard_address_conflict(semantic_evidence):
+        dim_result['hard_conflict'] = True
+        if status == 'fail':
+            if not explanation:
+                dim_result['explanation'] = '地址失败：存在高置信权威来源门牌或行政区划直接冲突。'
+        else:
+            if not explanation:
+                dim_result['explanation'] = '地址风险：存在高置信权威来源门牌或行政区划直接冲突。'
+        return
+
     addresses = _extract_informative_addresses(semantic_evidence)
     informative_confidences = _extract_informative_address_confidences(semantic_evidence)
     if not addresses or not informative_confidences:
@@ -1378,6 +1550,8 @@ def _apply_address_semantic_adjustment(dimension_results: Dict[str, Any]) -> Non
     semantic_relation = str(semantic.get('semantic_relation') or '').strip()
     prefix_only_hints = ('主地址', '前缀', '省市区', '镇街道')
     required_confidence = 0.8 if any(hint in explanation for hint in prefix_only_hints) else 0.82
+    if issue_code == 'single_exact_address_support':
+        required_confidence = min(required_confidence, 0.8)
     if status == 'fail':
         required_confidence = max(required_confidence, 0.85)
     final_confidence = max(max_confidence, semantic_confidence)

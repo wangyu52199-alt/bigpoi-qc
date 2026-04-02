@@ -51,6 +51,7 @@ HOUSE_NUMBER_PATTERN = re.compile(r'(\d+)\s*号')
 ROAD_CODE_PATTERN = re.compile(r'([gs]\d{2,4})', re.IGNORECASE)
 CITY_PATTERN = re.compile(r'([\u4e00-\u9fff]{1,12}市)')
 ROAD_SEGMENT_SUFFIX_PATTERN = re.compile(r'(大道|路|街|巷|国道|省道|县道|道)(?:中段|东段|西段|南段|北段|中|东|西|南|北)$')
+CITY_PREFIX_PATTERN = re.compile(r'^(?:中国)?(?:[\u4e00-\u9fff]{2,9}(?:省|自治区|特别行政区|地区|盟|自治州|州))+')
 ROAD_LOCALITY_BREAK_TOKENS = (
     '街道',
     '社区',
@@ -63,6 +64,19 @@ ROAD_LOCALITY_BREAK_TOKENS = (
     '工业园',
     '园区',
     '片区',
+)
+ROAD_CONNECTOR_TOKENS = ('与', '和', '及', '、')
+ROAD_NOISE_SUFFIX_KEYWORDS = (
+    '街道办事处',
+    '街道办',
+    '办事处',
+    '居民委员会',
+    '居委会',
+    '村民委员会',
+    '村委会',
+    '村委',
+    '社区',
+    '村',
 )
 
 
@@ -132,6 +146,12 @@ def _normalize_address_for_compare(text: str) -> str:
     for token in ('省', '市', '区', '县', '镇', '乡', '街道'):
         normalized = normalized.replace(token, '')
     normalized = normalized.replace('人民西路', '人民路')
+    normalized = normalized.replace('村民委员会', '村')
+    normalized = normalized.replace('村委会', '村')
+    normalized = normalized.replace('村委', '村')
+    normalized = normalized.replace('居民委员会', '社区')
+    normalized = normalized.replace('居委会', '社区')
+    normalized = normalized.replace('居委', '社区')
     normalized = normalized.replace('大道', '路')
     normalized = normalized.replace('国道', 'g')
     normalized = re.sub(r'g\s*(\d+)', r'g\1', normalized)
@@ -146,11 +166,61 @@ def _extract_city(address: str) -> Optional[str]:
     return match.group(1)
 
 
+def _normalize_city_name(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = ''.join(str(value).split())
+    if not text:
+        return None
+    text = CITY_PREFIX_PATTERN.sub('', text)
+    match = CITY_PATTERN.search(text)
+    if not match:
+        return None
+    city = CITY_PREFIX_PATTERN.sub('', match.group(1))
+    if city.endswith('市'):
+        city = city[:-1]
+    return city or None
+
+
 def _extract_house_number(address: str) -> Optional[str]:
     match = HOUSE_NUMBER_PATTERN.search(str(address or ''))
     if not match:
         return None
     return match.group(1)
+
+
+def _normalize_road_anchor_text(value: str) -> str:
+    text = str(value or '').strip()
+    if not text:
+        return ''
+    text = _strip_admin_prefix(text)
+
+    for token in ROAD_LOCALITY_BREAK_TOKENS:
+        if token not in text:
+            continue
+        head = text.rsplit(token, 1)[0].strip()
+        if head:
+            text = head
+
+    for token in ROAD_CONNECTOR_TOKENS:
+        if token not in text:
+            continue
+        parts = [part.strip() for part in text.split(token) if part.strip()]
+        if parts:
+            text = parts[-1]
+
+    road_end = re.search(r'.*?(?:路|街|巷|大道|国道|省道|县道|道)', text)
+    if road_end:
+        text = road_end.group(0).strip()
+
+    for suffix in ROAD_NOISE_SUFFIX_KEYWORDS:
+        if not text.endswith(suffix):
+            continue
+        stripped = text[:-len(suffix)].strip()
+        if stripped:
+            text = stripped
+
+    return text
 
 
 def _extract_road_anchor(address: str) -> Optional[str]:
@@ -160,14 +230,7 @@ def _extract_road_anchor(address: str) -> Optional[str]:
     matches = [match.group(1) for match in ROAD_PATTERN.finditer(text)]
     if not matches:
         return None
-    road_text = matches[-1]
-    road_text = _strip_admin_prefix(road_text)
-    for token in ROAD_LOCALITY_BREAK_TOKENS:
-        if token not in road_text:
-            continue
-        tail = road_text.rsplit(token, 1)[-1].strip()
-        if tail:
-            road_text = tail
+    road_text = _normalize_road_anchor_text(matches[-1])
     normalized = _normalize_address_for_compare(road_text)
     return normalized or None
 
@@ -199,8 +262,8 @@ def _address_match_level(record_address: str, evidence_address: str) -> str:
     if not record_text or not evidence_text:
         return 'ambiguous'
 
-    record_city = _extract_city(record_text)
-    evidence_city = _extract_city(evidence_text)
+    record_city = _normalize_city_name(_extract_city(record_text))
+    evidence_city = _normalize_city_name(_extract_city(evidence_text))
     if record_city and evidence_city and record_city != evidence_city:
         return 'city_district_conflict'
 
@@ -355,7 +418,15 @@ def _select_items(selector: str, payload: Dict[str, Any]) -> List[Dict[str, Any]
     if selector == 'evidence_record[]':
         data = payload.get('evidence_record')
         if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
+            selected: List[Dict[str, Any]] = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                matching = _copy_dict(item.get('matching'))
+                if matching.get('subject_consistent') is False:
+                    continue
+                selected.append(item)
+            return selected
         return []
     return []
 

@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## [2.4.12-stable] - 2026-04-02
+
+### 修复
+- `scripts/evidence_preprocessor.py` 新增地址文本归一：支持结构化地址对象（如 `{\"full\":...}`）、对象字符串回填，避免 `str(dict)` 直接参与地址匹配导致误判。
+- `scripts/dsl_executor.py` 收敛地址锚点提取与城市比较：
+  - 增加城市名归一（如 `汕尾市` 与 `广东省汕尾市` 视为同城）；
+  - 增强道路锚点清洗（处理“交叉口连接词”“街道/村委等后缀噪声”），降低同址表达差异误判。
+- `scripts/result_contract.py` 增强地址语义复核鲁棒性：
+  - 地址语义一致性由“首条基准”改为“多数一致簇”判定，避免单条离群证据一票否决；
+  - 语义复核过滤 `subject_consistent=false` 证据；
+  - 新增“高置信权威硬冲突保护”，对权威来源门牌/行政区硬冲突保持 `risk/fail`，防止过度放宽。
+
+## [2.4.11-stable] - 2026-04-02
+
+### 调整
+- `scripts/evidence_preprocessor.py` 新增“主体一致性前置过滤”：在维度判定前先做主体识别与名称锚点比对；主体类型冲突（如居委会 vs 派出所）或明显主体名称不一致的证据直接过滤，不再进入地址/坐标/类型/行政区划等维度计算。
+- `scripts/evidence_preprocessor.py` 为保留证据打标 `matching.subject_consistent=true`，并在被过滤证据摘要中输出 `subject_type_mismatch` / `subject_name_mismatch` 原因，便于复盘。
+- `scripts/dsl_executor.py` 收敛证据选择：当证据显式标记 `matching.subject_consistent=false` 时，维度 DSL 不再消费该证据，避免主体不一致证据绕过前置过滤。
+
 ## [2.4.10-stable] - 2026-04-01
 
 ### 修复
