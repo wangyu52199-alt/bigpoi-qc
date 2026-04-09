@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "first_routing_result",
+  "type": "object",
+  "required": [
+    "sample_id",
+    "first_routing_target",
+    "first_routing_reason",
+    "matched_rules",
+    "confidence",
+    "structured_signals"
+  ],
+  "properties": {
+    "sample_id": {"type": "string"},
+    "first_routing_target": {
+      "type": "string",
+      "enum": [
+        "verify_agent",
+        "qc_agent",
+        "both"
+      ]
+    },
+    "first_routing_reason": {"type": "string"},
+    "matched_rules": {"type": "array", "items": {"type": "string"}},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "structured_signals": {"type": "object"}
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "overall_pass": true,
+  "bucket_results": [
+    {
+      "bucket_name": "historical_high_frequency",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "bucket_pass": true
+    },
+    {
+      "bucket_name": "current_fix_target",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "bucket_pass": true
+    },
+    {
+      "bucket_name": "boundary_cases",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "bucket_pass": true
+    }
+  ],
+  "failed_samples": [],
+  "risk_summary": "高风险失败样本数: 0; 总失败样本数: 0",
+  "release_recommendation": "allow_release",
+  "metrics_summary": {
+    "total_samples": 5,
+    "failed_samples": 0,
+    "high_risk_failed": 0
+  }
+}

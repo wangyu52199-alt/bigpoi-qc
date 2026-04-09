@@ -1,0 +1,26 @@
+{
+  "sample_id": "S-006",
+  "verify_content_is_correct": 1,
+  "verify_action_is_correct": 1,
+  "qc_intercept_is_correct": 1,
+  "evidence_status": 1,
+  "issue_observation_tags": [],
+  "judgment_dimension_tags": [],
+  "manual_comment": "上游数据源字段错位，导致门店类型被错误映射。",
+  "conflicting_evidence": "",
+  "manual_added_evidence_url": "",
+  "manual_added_evidence_type": "",
+  "manual_added_evidence_abstract": "",
+  "verify_result": "核实通过",
+  "evidence_record": [
+    {
+      "source": "upstream_snapshot",
+      "evidence": "type_code 字段为空"
+    }
+  ],
+  "qc_status": "qualified",
+  "qc_result": {
+    "intercept": false,
+    "reason": "问题在上游，不在质检"
+  }
+}

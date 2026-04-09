@@ -1,0 +1,9 @@
+priority_rules:
+  high:
+    - qc_intercept_is_correct == 0 and evidence_status == 2
+    - qc_intercept_is_correct == 0 and qc_status == "risky"
+  medium:
+    - qc_intercept_is_correct == 0
+    - evidence_status == 0
+  low:
+    - default

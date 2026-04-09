@@ -1,0 +1,8 @@
+auto_qc_rules:
+- id: qc-auto-S-002
+  module: intercept_rule
+  intercept_issue_type: false_positive
+  issue_summary: '质检问题类型: false_positive；人工说明: 质检误拦截，规则命中阈值偏严。'
+  evidence_risk: supported
+  training_priority: medium
+  created_at: '2026-04-09T16:45:05.609731+08:00'

@@ -1,0 +1,26 @@
+{
+  "sample_id": "S-003",
+  "verify_content_is_correct": 0,
+  "verify_action_is_correct": 1,
+  "qc_intercept_is_correct": 0,
+  "evidence_status": 0,
+  "issue_observation_tags": ["evidence_missing"],
+  "judgment_dimension_tags": ["address_judgment_problem", "qc_intercept_rule_problem"],
+  "manual_comment": "地址核实存在偏差，同时质检规则未识别该偏差。",
+  "conflicting_evidence": "",
+  "manual_added_evidence_url": "",
+  "manual_added_evidence_type": "",
+  "manual_added_evidence_abstract": "",
+  "verify_result": "需人工核实",
+  "evidence_record": [
+    {
+      "source": "operator_note",
+      "evidence": "缺少最新地址证据"
+    }
+  ],
+  "qc_status": "qualified",
+  "qc_result": {
+    "intercept": false,
+    "reason": "未覆盖地址异常规则"
+  }
+}

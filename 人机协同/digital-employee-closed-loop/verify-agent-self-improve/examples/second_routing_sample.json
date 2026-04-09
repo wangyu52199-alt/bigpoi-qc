@@ -1,0 +1,8 @@
+{
+  "sample_id": "S-001",
+  "primary_module": "entity_extraction",
+  "module_candidates": ["entity_extraction", "evidence_selection"],
+  "second_routing_reason": "核实维度标签显示实体识别判断存在问题。",
+  "matched_rules": ["verify_name_address_type_to_entity_extraction"],
+  "structured_signals": {}
+}

@@ -1,0 +1,19 @@
+{
+  "sample_id": "S-001",
+  "issue_summary": "核实问题集中在维度: name_judgment_problem, evidence_usage_problem",
+  "observed_symptoms": ["evidence_invalid"],
+  "related_dimensions": ["name_judgment_problem", "evidence_usage_problem"],
+  "suspected_modules": ["entity_extraction", "evidence_selection"],
+  "evidence_gap": "evidence_sufficient",
+  "escalation_signal": true,
+  "regression_case_candidate": {
+    "sample_id": "S-001",
+    "verify_result": "需人工核实",
+    "evidence_status": 1,
+    "manual_comment": "名称判断错误，引用证据不充分。"
+  },
+  "training_priority": "high",
+  "structured_notes": {
+    "manual_comment": "名称判断错误，引用证据不充分。"
+  }
+}

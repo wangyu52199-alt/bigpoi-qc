@@ -1,0 +1,17 @@
+{
+  "sample_id": "S-002",
+  "intercept_issue_type": "false_positive",
+  "issue_summary": "质检问题类型: false_positive；人工说明: 质检误拦截，规则命中阈值偏严。",
+  "evidence_risk": "supported",
+  "suspected_modules": ["intercept_rule", "false_positive_control"],
+  "regression_case_candidate": {
+    "sample_id": "S-002",
+    "qc_status": "unqualified",
+    "qc_intercept_is_correct": 0,
+    "manual_comment": "质检误拦截，规则命中阈值偏严。"
+  },
+  "training_priority": "medium",
+  "structured_notes": {
+    "first_routing_reason": "质检拦截错误且命中质检拦截策略问题。"
+  }
+}

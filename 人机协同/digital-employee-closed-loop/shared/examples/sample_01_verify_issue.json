@@ -1,0 +1,26 @@
+{
+  "sample_id": "S-001",
+  "verify_content_is_correct": 0,
+  "verify_action_is_correct": 0,
+  "qc_intercept_is_correct": 1,
+  "evidence_status": 1,
+  "issue_observation_tags": ["evidence_invalid"],
+  "judgment_dimension_tags": ["name_judgment_problem", "evidence_usage_problem"],
+  "manual_comment": "名称判断错误，引用证据不充分。",
+  "conflicting_evidence": "",
+  "manual_added_evidence_url": "",
+  "manual_added_evidence_type": "",
+  "manual_added_evidence_abstract": "",
+  "verify_result": "需人工核实",
+  "evidence_record": [
+    {
+      "source": "poi_registry",
+      "evidence": "注册名: 杭州某某餐厅"
+    }
+  ],
+  "qc_status": "qualified",
+  "qc_result": {
+    "intercept": false,
+    "reason": "未触发风险规则"
+  }
+}

@@ -1,0 +1,1 @@
+{"sample_id": "S-001", "scenario": "核实问题集中在维度: name_judgment_problem, evidence_usage_problem", "expected_pass": true, "actual_pass": false, "risk_level": "high", "detail": {"sample_id": "S-001", "verify_result": "需人工核实", "evidence_status": 1, "manual_comment": "名称判断错误，引用证据不充分。"}}

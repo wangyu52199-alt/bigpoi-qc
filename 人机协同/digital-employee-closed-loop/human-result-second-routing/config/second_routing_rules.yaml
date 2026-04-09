@@ -1,0 +1,104 @@
+rules:
+  - id: verify_name_address_type_to_entity_extraction
+    priority: 80
+    target: entity_extraction
+    scope: verify
+    reason: 核实维度标签显示实体识别判断存在问题。
+    conditions:
+      tags_include_any:
+        field: judgment_dimension_tags
+        values:
+          - name_judgment_problem
+          - address_judgment_problem
+          - type_judgment_problem
+          - admin_judgement_problem
+
+  - id: verify_location_to_reasoning
+    priority: 70
+    target: reasoning
+    scope: verify
+    reason: 坐标维度判断问题更偏向推理与决策链路。
+    conditions:
+      tags_include_any:
+        field: judgment_dimension_tags
+        values: ["location_judgment_problem"]
+
+  - id: verify_evidence_usage_to_evidence_selection
+    priority: 75
+    target: evidence_selection
+    scope: verify
+    reason: 证据使用问题优先进入证据筛选模块。
+    conditions:
+      tags_include_any:
+        field: judgment_dimension_tags
+        values: ["evidence_usage_problem"]
+
+  - id: verify_missing_evidence_to_evidence_collection
+    priority: 72
+    target: evidence_collection
+    scope: verify
+    reason: 关键证据缺失优先进入证据采集模块。
+    conditions:
+      tags_include_any:
+        field: issue_observation_tags
+        values: ["evidence_missing"]
+
+  - id: verify_escalation_strategy
+    priority: 70
+    target: escalation_strategy
+    scope: verify
+    reason: 升级策略相关问题应进入升级策略模块。
+    conditions:
+      tags_include_any:
+        field: judgment_dimension_tags
+        values: ["manual_escalation_strategy_problem"]
+
+  - id: qc_intercept_rule
+    priority: 85
+    target: intercept_rule
+    scope: qc
+    reason: 质检拦截策略问题优先进入拦截规则模块。
+    conditions:
+      tags_include_any:
+        field: judgment_dimension_tags
+        values: ["qc_intercept_rule_problem"]
+
+  - id: qc_evidence_check
+    priority: 70
+    target: evidence_check
+    scope: qc
+    reason: 证据无效或矛盾影响质检判断。
+    conditions:
+      tags_include_any:
+        field: issue_observation_tags
+        values: ["evidence_invalid", "evidence_conflicting", "invalid_evidence_cited"]
+
+  - id: qc_false_positive_control
+    priority: 75
+    target: false_positive_control
+    scope: qc
+    reason: 质检误拦截信号，优先关注误报控制。
+    conditions:
+      all:
+        - field_equals: {field: qc_intercept_is_correct, value: 0}
+        - field_equals: {field: qc_status, value: "unqualified"}
+
+  - id: qc_false_negative_control
+    priority: 74
+    target: false_negative_control
+    scope: qc
+    reason: 质检漏拦截信号，优先关注漏报控制。
+    conditions:
+      all:
+        - field_equals: {field: qc_intercept_is_correct, value: 0}
+        - field_equals: {field: qc_status, value: "qualified"}
+
+  - id: qc_explanation_generation
+    priority: 65
+    target: qc_explanation_generation
+    scope: qc
+    reason: 质检解释不清，建议增强解释生成。
+    conditions:
+      text_contains_any:
+        field: manual_comment
+        keywords: ["解释不清", "说明不足", "理由不充分"]

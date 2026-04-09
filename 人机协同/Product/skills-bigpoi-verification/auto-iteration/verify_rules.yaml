@@ -1,0 +1,10 @@
+auto_verify_rules:
+- id: verify-auto-S-001
+  module: entity_extraction
+  issue_summary: '核实问题集中在维度: name_judgment_problem, evidence_usage_problem'
+  related_dimensions:
+  - name_judgment_problem
+  - evidence_usage_problem
+  evidence_gap: evidence_sufficient
+  training_priority: high
+  created_at: '2026-04-09T16:32:11.527195+08:00'

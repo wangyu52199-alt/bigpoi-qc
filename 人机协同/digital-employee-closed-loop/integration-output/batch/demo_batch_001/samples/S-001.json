@@ -1,0 +1,145 @@
+{
+  "sample_id": "S-001",
+  "dry_run": true,
+  "first_routing_result": {
+    "sample_id": "S-001",
+    "first_routing_target": "verify_agent",
+    "first_routing_reason": "核实内容或动作存在问题，且命中核实维度标签。",
+    "matched_rules": [
+      "verify_issue_by_verify_flags_and_dimension",
+      "verify_issue_by_verify_flags",
+      "fallback_both"
+    ],
+    "confidence": 0.88,
+    "structured_signals": {
+      "targets_hit": [
+        "verify_agent",
+        "verify_agent",
+        "both"
+      ],
+      "manual_signals": {
+        "verify_wrong": true,
+        "qc_wrong": false,
+        "evidence_status": 1,
+        "issue_observation_tags": [
+          "evidence_invalid"
+        ],
+        "judgment_dimension_tags": [
+          "name_judgment_problem",
+          "evidence_usage_problem"
+        ]
+      }
+    }
+  },
+  "resolved_targets": [
+    "verify_agent"
+  ],
+  "per_target": {
+    "verify_agent": {
+      "second_routing_result": {
+        "sample_id": "S-001",
+        "primary_module": "entity_extraction",
+        "module_candidates": [
+          "entity_extraction",
+          "evidence_selection"
+        ],
+        "second_routing_reason": "核实维度标签显示实体识别判断存在问题。",
+        "matched_rules": [
+          "verify_name_address_type_to_entity_extraction",
+          "verify_evidence_usage_to_evidence_selection"
+        ],
+        "structured_signals": {
+          "module_scores": {
+            "entity_extraction": 80,
+            "evidence_selection": 75
+          },
+          "first_routing_target": "verify_agent",
+          "reason_map": {
+            "entity_extraction": [
+              "核实维度标签显示实体识别判断存在问题。"
+            ],
+            "evidence_selection": [
+              "证据使用问题优先进入证据筛选模块。"
+            ]
+          }
+        }
+      },
+      "improvement_record": {
+        "sample_id": "S-001",
+        "issue_summary": "核实问题集中在维度: name_judgment_problem, evidence_usage_problem",
+        "observed_symptoms": [
+          "evidence_invalid"
+        ],
+        "related_dimensions": [
+          "name_judgment_problem",
+          "evidence_usage_problem"
+        ],
+        "suspected_modules": [
+          "entity_extraction",
+          "evidence_selection"
+        ],
+        "evidence_gap": "evidence_sufficient",
+        "escalation_signal": true,
+        "regression_case_candidate": {
+          "sample_id": "S-001",
+          "verify_result": "需人工核实",
+          "evidence_status": 1,
+          "manual_comment": "名称判断错误，引用证据不充分。"
+        },
+        "training_priority": "high",
+        "structured_notes": {
+          "manual_comment": "名称判断错误，引用证据不充分。",
+          "has_manual_added_evidence": false,
+          "first_routing_reason": "核实内容或动作存在问题，且命中核实维度标签。",
+          "second_routing_reason": "核实维度标签显示实体识别判断存在问题。"
+        }
+      },
+      "iteration_result": {
+        "sample_id": "S-001",
+        "target_skill_path": "/Users/summer/Documents/bigpoi-qc/人机协同/Product/skills-bigpoi-verification",
+        "primary_module": "entity_extraction",
+        "applied": false,
+        "operations": [
+          {
+            "operation": "append_yaml_rule",
+            "file_path": "/Users/summer/Documents/bigpoi-qc/人机协同/Product/skills-bigpoi-verification/config/verify_rules.yaml",
+            "detail": {
+              "bucket_key": "auto_verify_rules",
+              "rule_id": "verify-auto-S-001"
+            },
+            "status": "planned"
+          },
+          {
+            "operation": "append_jsonl",
+            "file_path": "/Users/summer/Documents/bigpoi-qc/人机协同/Product/skills-bigpoi-verification/regression/current_fix_target.jsonl",
+            "detail": {
+              "sample_id": "S-001"
+            },
+            "status": "planned"
+          },
+          {
+            "operation": "append_markdown",
+            "file_path": "/Users/summer/Documents/bigpoi-qc/人机协同/Product/skills-bigpoi-verification/changelog/auto_iteration.md",
+            "detail": {
+              "sample_id": "S-001"
+            },
+            "status": "planned"
+          }
+        ],
+        "touched_files": [
+          "/Users/summer/Documents/bigpoi-qc/人机协同/Product/skills-bigpoi-verification/config/verify_rules.yaml",
+          "/Users/summer/Documents/bigpoi-qc/人机协同/Product/skills-bigpoi-verification/regression/current_fix_target.jsonl",
+          "/Users/summer/Documents/bigpoi-qc/人机协同/Product/skills-bigpoi-verification/changelog/auto_iteration.md"
+        ],
+        "trace": {
+          "source": "verify-agent-self-improve",
+          "second_routing_reason": "核实维度标签显示实体识别判断存在问题。",
+          "suspected_modules": [
+            "entity_extraction",
+            "evidence_selection"
+          ]
+        }
+      }
+    }
+  }
+}

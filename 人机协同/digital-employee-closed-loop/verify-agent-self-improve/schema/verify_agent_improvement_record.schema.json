@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "verify_agent_improvement_record",
+  "type": "object",
+  "required": [
+    "sample_id",
+    "issue_summary",
+    "observed_symptoms",
+    "related_dimensions",
+    "suspected_modules",
+    "evidence_gap",
+    "escalation_signal",
+    "regression_case_candidate",
+    "training_priority",
+    "structured_notes"
+  ],
+  "properties": {
+    "sample_id": {"type": "string"},
+    "issue_summary": {"type": "string"},
+    "observed_symptoms": {"type": "array", "items": {"type": "string"}},
+    "related_dimensions": {"type": "array", "items": {"type": "string"}},
+    "suspected_modules": {"type": "array", "items": {"type": "string"}},
+    "evidence_gap": {"type": "string"},
+    "escalation_signal": {"type": "boolean"},
+    "regression_case_candidate": {"type": "object"},
+    "training_priority": {"type": "string", "enum": ["high", "medium", "low"]},
+    "structured_notes": {"type": "object"}
+  }
+}

@@ -1,0 +1,12 @@
+bucket_thresholds:
+  historical_high_frequency:
+    max_fail: 1
+    min_pass_rate: 0.8
+  current_fix_target:
+    max_fail: 0
+    min_pass_rate: 1.0
+  boundary_cases:
+    max_fail: 0
+    min_pass_rate: 0.9
+global:
+  block_on_high_risk_fail: true

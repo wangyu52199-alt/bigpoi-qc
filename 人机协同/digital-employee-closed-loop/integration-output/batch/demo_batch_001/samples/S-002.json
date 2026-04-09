@@ -1,0 +1,137 @@
+{
+  "sample_id": "S-002",
+  "dry_run": true,
+  "first_routing_result": {
+    "sample_id": "S-002",
+    "first_routing_target": "qc_agent",
+    "first_routing_reason": "质检拦截错误且命中质检拦截策略问题。",
+    "matched_rules": [
+      "qc_issue_by_intercept_and_tag",
+      "qc_issue_by_intercept_flag",
+      "fallback_both"
+    ],
+    "confidence": 0.9,
+    "structured_signals": {
+      "targets_hit": [
+        "qc_agent",
+        "qc_agent",
+        "both"
+      ],
+      "manual_signals": {
+        "verify_wrong": false,
+        "qc_wrong": true,
+        "evidence_status": 1,
+        "issue_observation_tags": [],
+        "judgment_dimension_tags": [
+          "qc_intercept_rule_problem"
+        ]
+      }
+    }
+  },
+  "resolved_targets": [
+    "qc_agent"
+  ],
+  "per_target": {
+    "qc_agent": {
+      "second_routing_result": {
+        "sample_id": "S-002",
+        "primary_module": "intercept_rule",
+        "module_candidates": [
+          "intercept_rule",
+          "false_positive_control"
+        ],
+        "second_routing_reason": "质检拦截策略问题优先进入拦截规则模块。",
+        "matched_rules": [
+          "qc_intercept_rule",
+          "qc_false_positive_control"
+        ],
+        "structured_signals": {
+          "module_scores": {
+            "intercept_rule": 85,
+            "false_positive_control": 75
+          },
+          "first_routing_target": "qc_agent",
+          "reason_map": {
+            "intercept_rule": [
+              "质检拦截策略问题优先进入拦截规则模块。"
+            ],
+            "false_positive_control": [
+              "质检误拦截信号，优先关注误报控制。"
+            ]
+          }
+        }
+      },
+      "improvement_record": {
+        "sample_id": "S-002",
+        "intercept_issue_type": "false_positive",
+        "issue_summary": "质检问题类型: false_positive；人工说明: 质检误拦截，规则命中阈值偏严。",
+        "evidence_risk": "supported",
+        "suspected_modules": [
+          "intercept_rule",
+          "false_positive_control"
+        ],
+        "regression_case_candidate": {
+          "sample_id": "S-002",
+          "qc_status": "unqualified",
+          "qc_intercept_is_correct": 0,
+          "manual_comment": "质检误拦截，规则命中阈值偏严。"
+        },
+        "training_priority": "medium",
+        "structured_notes": {
+          "first_routing_reason": "质检拦截错误且命中质检拦截策略问题。",
+          "second_routing_reason": "质检拦截策略问题优先进入拦截规则模块。",
+          "issue_observation_tags": [],
+          "judgment_dimension_tags": [
+            "qc_intercept_rule_problem"
+          ]
+        }
+      },
+      "iteration_result": {
+        "sample_id": "S-002",
+        "target_skill_path": "/Users/summer/Documents/bigpoi-qc/人机协同/BigPoi-verification-qc-stable",
+        "primary_module": "intercept_rule",
+        "applied": false,
+        "operations": [
+          {
+            "operation": "append_yaml_rule",
+            "file_path": "/Users/summer/Documents/bigpoi-qc/人机协同/BigPoi-verification-qc-stable/config/qc_rules.yaml",
+            "detail": {
+              "bucket_key": "auto_qc_rules",
+              "rule_id": "qc-auto-S-002"
+            },
+            "status": "planned"
+          },
+          {
+            "operation": "append_jsonl",
+            "file_path": "/Users/summer/Documents/bigpoi-qc/人机协同/BigPoi-verification-qc-stable/regression/current_fix_target.jsonl",
+            "detail": {
+              "sample_id": "S-002"
+            },
+            "status": "planned"
+          },
+          {
+            "operation": "append_markdown",
+            "file_path": "/Users/summer/Documents/bigpoi-qc/人机协同/BigPoi-verification-qc-stable/changelog/auto_iteration.md",
+            "detail": {
+              "sample_id": "S-002"
+            },
+            "status": "planned"
+          }
+        ],
+        "touched_files": [
+          "/Users/summer/Documents/bigpoi-qc/人机协同/BigPoi-verification-qc-stable/config/qc_rules.yaml",
+          "/Users/summer/Documents/bigpoi-qc/人机协同/BigPoi-verification-qc-stable/regression/current_fix_target.jsonl",
+          "/Users/summer/Documents/bigpoi-qc/人机协同/BigPoi-verification-qc-stable/changelog/auto_iteration.md"
+        ],
+        "trace": {
+          "source": "qc-agent-self-improve",
+          "second_routing_reason": "质检拦截策略问题优先进入拦截规则模块。",
+          "suspected_modules": [
+            "intercept_rule",
+            "false_positive_control"
+          ]
+        }
+      }
+    }
+  }
+}

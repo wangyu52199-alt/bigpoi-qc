@@ -1,0 +1,8 @@
+{
+  "sample_id": "S-002",
+  "primary_module": "intercept_rule",
+  "module_candidates": ["intercept_rule", "false_positive_control"],
+  "second_routing_reason": "质检拦截策略问题优先进入拦截规则模块。",
+  "matched_rules": ["qc_intercept_rule"],
+  "structured_signals": {}
+}

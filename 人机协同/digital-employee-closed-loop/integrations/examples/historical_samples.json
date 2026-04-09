@@ -1,0 +1,10 @@
+[
+  {
+    "sample_id": "H-001",
+    "scenario": "历史高频名称误判",
+    "expected_pass": true,
+    "actual_pass": true,
+    "risk_level": "medium",
+    "detail": {"note": "历史样本回放通过"}
+  }
+]

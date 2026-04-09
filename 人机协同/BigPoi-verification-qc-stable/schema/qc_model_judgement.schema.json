@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QC Model Judgement Schema",
+  "description": "Model adjudication payload for hybrid QC. Model can only propose dimension-level overrides.",
+  "type": "object",
+  "required": [
+    "task_id",
+    "overrides"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string"
+    },
+    "model_name": {
+      "type": "string"
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "dimension",
+          "proposed_status",
+          "reason_code",
+          "used_evidence_ids"
+        ],
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "name",
+              "address",
+              "administrative",
+              "category"
+            ]
+          },
+          "proposed_status": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "risk",
+              "fail"
+            ]
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "used_evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "conflict_points": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "explanation": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

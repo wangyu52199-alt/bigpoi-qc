@@ -1,0 +1,7 @@
+verify_target:
+  skill_path: /Users/summer/Documents/bigpoi-qc/人机协同/Product/skills-bigpoi-verification
+  config_path: /Users/summer/Documents/bigpoi-qc/人机协同/digital-employee-closed-loop/verify-agent-self-improve/config/auto_iteration_config.yaml
+
+qc_target:
+  skill_path: /Users/summer/Documents/bigpoi-qc/人机协同/BigPoi-verification-qc-stable
+  config_path: /Users/summer/Documents/bigpoi-qc/人机协同/digital-employee-closed-loop/qc-agent-self-improve/config/auto_iteration_config.yaml

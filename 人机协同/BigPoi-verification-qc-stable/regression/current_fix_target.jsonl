@@ -1,0 +1,1 @@
+{"sample_id": "S-002", "scenario": "质检问题类型: false_positive；人工说明: 质检误拦截，规则命中阈值偏严。", "expected_pass": true, "actual_pass": false, "risk_level": "medium", "detail": {"sample_id": "S-002", "qc_status": "unqualified", "qc_intercept_is_correct": 0, "manual_comment": "质检误拦截，规则命中阈值偏严。"}}

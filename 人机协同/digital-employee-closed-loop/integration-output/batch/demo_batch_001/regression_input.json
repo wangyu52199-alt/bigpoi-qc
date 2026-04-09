@@ -1,0 +1,71 @@
+{
+  "historical_high_frequency": [
+    {
+      "sample_id": "H-001",
+      "scenario": "历史高频名称误判",
+      "expected_pass": true,
+      "actual_pass": true,
+      "risk_level": "medium",
+      "detail": {
+        "note": "历史样本回放通过"
+      }
+    }
+  ],
+  "current_fix_target": [
+    {
+      "sample_id": "S-001",
+      "scenario": "核实问题集中在维度: name_judgment_problem, evidence_usage_problem",
+      "expected_pass": true,
+      "actual_pass": true,
+      "risk_level": "high",
+      "detail": {
+        "resolved_targets": [
+          "verify_agent"
+        ],
+        "first_routing_target": "verify_agent",
+        "dry_run": true
+      }
+    },
+    {
+      "sample_id": "S-002",
+      "scenario": "质检问题类型: false_positive；人工说明: 质检误拦截，规则命中阈值偏严。",
+      "expected_pass": true,
+      "actual_pass": true,
+      "risk_level": "medium",
+      "detail": {
+        "resolved_targets": [
+          "qc_agent"
+        ],
+        "first_routing_target": "qc_agent",
+        "dry_run": true
+      }
+    },
+    {
+      "sample_id": "S-003",
+      "scenario": "核实问题集中在维度: address_judgment_problem, qc_intercept_rule_problem | 质检问题类型: false_negative；人工说明: 地址核实存在偏差，同时质检规则未识别该偏差。",
+      "expected_pass": true,
+      "actual_pass": true,
+      "risk_level": "medium",
+      "detail": {
+        "resolved_targets": [
+          "verify_agent",
+          "qc_agent"
+        ],
+        "first_routing_target": "both",
+        "dry_run": true
+      }
+    }
+  ],
+  "boundary_cases": [
+    {
+      "sample_id": "B-001",
+      "scenario": "边界样本: 证据冲突",
+      "expected_pass": true,
+      "actual_pass": true,
+      "risk_level": "high",
+      "detail": {
+        "note": "边界样本通过"
+      }
+    }
+  ]
+}

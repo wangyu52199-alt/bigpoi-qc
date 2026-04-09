@@ -1,0 +1,30 @@
+{
+  "sample_id": "S-004",
+  "verify_content_is_correct": 0,
+  "verify_action_is_correct": 0,
+  "qc_intercept_is_correct": 1,
+  "evidence_status": 2,
+  "issue_observation_tags": ["evidence_conflicting"],
+  "judgment_dimension_tags": ["evidence_usage_problem", "location_judgment_problem"],
+  "manual_comment": "坐标证据与门店地址证据互相矛盾。",
+  "conflicting_evidence": "地图坐标显示A点，门牌地址显示B点。",
+  "manual_added_evidence_url": "",
+  "manual_added_evidence_type": "",
+  "manual_added_evidence_abstract": "",
+  "verify_result": "需人工核实",
+  "evidence_record": [
+    {
+      "source": "gps",
+      "evidence": "31.23,121.47"
+    },
+    {
+      "source": "address_doc",
+      "evidence": "上海市XX路100号"
+    }
+  ],
+  "qc_status": "risky",
+  "qc_result": {
+    "intercept": true,
+    "reason": "证据冲突"
+  }
+}

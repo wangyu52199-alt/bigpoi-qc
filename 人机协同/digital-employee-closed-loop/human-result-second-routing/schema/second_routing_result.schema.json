@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "second_routing_result",
+  "type": "object",
+  "required": [
+    "sample_id",
+    "primary_module",
+    "module_candidates",
+    "second_routing_reason",
+    "matched_rules",
+    "structured_signals"
+  ],
+  "properties": {
+    "sample_id": {"type": "string"},
+    "primary_module": {"type": "string"},
+    "module_candidates": {"type": "array", "items": {"type": "string"}},
+    "second_routing_reason": {"type": "string"},
+    "matched_rules": {"type": "array", "items": {"type": "string"}},
+    "structured_signals": {"type": "object"}
+  }
+}

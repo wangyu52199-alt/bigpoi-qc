@@ -1,0 +1,26 @@
+{
+  "sample_id": "S-002",
+  "verify_content_is_correct": 1,
+  "verify_action_is_correct": 1,
+  "qc_intercept_is_correct": 0,
+  "evidence_status": 1,
+  "issue_observation_tags": [],
+  "judgment_dimension_tags": ["qc_intercept_rule_problem"],
+  "manual_comment": "质检误拦截，规则命中阈值偏严。",
+  "conflicting_evidence": "",
+  "manual_added_evidence_url": "",
+  "manual_added_evidence_type": "",
+  "manual_added_evidence_abstract": "",
+  "verify_result": "核实通过",
+  "evidence_record": [
+    {
+      "source": "map_snapshot",
+      "evidence": "门店营业中"
+    }
+  ],
+  "qc_status": "unqualified",
+  "qc_result": {
+    "intercept": true,
+    "reason": "风险阈值过严"
+  }
+}

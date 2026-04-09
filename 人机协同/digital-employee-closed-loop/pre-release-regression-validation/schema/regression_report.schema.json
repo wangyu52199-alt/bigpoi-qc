@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "regression_report",
+  "type": "object",
+  "required": [
+    "overall_pass",
+    "bucket_results",
+    "failed_samples",
+    "risk_summary",
+    "release_recommendation",
+    "metrics_summary"
+  ],
+  "properties": {
+    "overall_pass": {"type": "boolean"},
+    "bucket_results": {"type": "array", "items": {"type": "object"}},
+    "failed_samples": {"type": "array", "items": {"type": "object"}},
+    "risk_summary": {"type": "string"},
+    "release_recommendation": {"type": "string", "enum": ["allow_release", "hold_release"]},
+    "metrics_summary": {"type": "object"}
+  }
+}

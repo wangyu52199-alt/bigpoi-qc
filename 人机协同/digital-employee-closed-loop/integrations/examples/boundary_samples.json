@@ -1,0 +1,10 @@
+[
+  {
+    "sample_id": "B-001",
+    "scenario": "边界样本: 证据冲突",
+    "expected_pass": true,
+    "actual_pass": true,
+    "risk_level": "high",
+    "detail": {"note": "边界样本通过"}
+  }
+]

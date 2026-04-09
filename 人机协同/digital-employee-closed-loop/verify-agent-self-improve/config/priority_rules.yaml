@@ -1,0 +1,9 @@
+priority_rules:
+  high:
+    - verify_content_is_correct == 0 and verify_action_is_correct == 0
+    - evidence_status == 2
+  medium:
+    - verify_content_is_correct == 0 or verify_action_is_correct == 0
+    - evidence_status == 0
+  low:
+    - default

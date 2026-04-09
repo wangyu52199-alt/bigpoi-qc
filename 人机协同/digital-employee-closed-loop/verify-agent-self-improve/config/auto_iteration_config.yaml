@@ -1,0 +1,5 @@
+rules_bucket_key: auto_verify_rules
+paths:
+  rule_file: config/verify_rules.yaml
+  regression_file: regression/current_fix_target.jsonl
+  log_file: changelog/auto_iteration.md

@@ -1,0 +1,52 @@
+{
+  "run_time": "2026-04-09T17:11:02.186857+08:00",
+  "dry_run": true,
+  "total_samples": 3,
+  "succeeded_samples": 3,
+  "failed_samples": 0,
+  "failed_runs": [],
+  "regression_report": {
+    "overall_pass": true,
+    "bucket_results": [
+      {
+        "bucket_name": "historical_high_frequency",
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pass_rate": 1.0,
+        "bucket_pass": true
+      },
+      {
+        "bucket_name": "current_fix_target",
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "pass_rate": 1.0,
+        "bucket_pass": true
+      },
+      {
+        "bucket_name": "boundary_cases",
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pass_rate": 1.0,
+        "bucket_pass": true
+      }
+    ],
+    "failed_samples": [],
+    "risk_summary": "高风险失败样本数: 0; 总失败样本数: 0",
+    "release_recommendation": "allow_release",
+    "metrics_summary": {
+      "total_samples": 5,
+      "failed_samples": 0,
+      "high_risk_failed": 0
+    }
+  },
+  "output_files": {
+    "regression_input": "/Users/summer/Documents/bigpoi-qc/人机协同/digital-employee-closed-loop/integration-output/batch/demo_batch_001/regression_input.json",
+    "regression_report_json": "/Users/summer/Documents/bigpoi-qc/人机协同/digital-employee-closed-loop/integration-output/batch/demo_batch_001/regression_report.json",
+    "regression_report_md": "/Users/summer/Documents/bigpoi-qc/人机协同/digital-employee-closed-loop/integration-output/batch/demo_batch_001/regression_report.md",
+    "failed_runs": "/Users/summer/Documents/bigpoi-qc/人机协同/digital-employee-closed-loop/integration-output/batch/demo_batch_001/failed_runs.json",
+    "sample_output_dir": "/Users/summer/Documents/bigpoi-qc/人机协同/digital-employee-closed-loop/integration-output/batch/demo_batch_001/samples"
+  }
+}

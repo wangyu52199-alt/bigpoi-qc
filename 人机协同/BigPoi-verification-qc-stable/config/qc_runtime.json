@@ -1,0 +1,6 @@
+{
+  "result_dir": "/app/qc_test/output/results",
+  "strict_result_dir": true,
+  "disable_recovery_search": true,
+  "description": "质检技能运行时固定结果目录配置"
+}

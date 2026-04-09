@@ -1,0 +1,8 @@
+{
+  "sample_id": "S-002",
+  "first_routing_target": "qc_agent",
+  "first_routing_reason": "质检拦截错误且命中质检拦截策略问题。",
+  "matched_rules": ["qc_issue_by_intercept_and_tag"],
+  "confidence": 0.9,
+  "structured_signals": {}
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "regression_validation_input",
+  "type": "object",
+  "required": ["historical_high_frequency", "current_fix_target", "boundary_cases"],
+  "properties": {
+    "historical_high_frequency": {"type": "array", "items": {"$ref": "#/definitions/sample"}},
+    "current_fix_target": {"type": "array", "items": {"$ref": "#/definitions/sample"}},
+    "boundary_cases": {"type": "array", "items": {"$ref": "#/definitions/sample"}}
+  },
+  "definitions": {
+    "sample": {
+      "type": "object",
+      "required": ["sample_id", "scenario", "expected_pass", "actual_pass", "risk_level"],
+      "properties": {
+        "sample_id": {"type": "string"},
+        "scenario": {"type": "string"},
+        "expected_pass": {"type": "boolean"},
+        "actual_pass": {"type": "boolean"},
+        "risk_level": {"type": "string", "enum": ["high", "medium", "low"]},
+        "detail": {"type": "object"}
+      }
+    }
+  }
+}

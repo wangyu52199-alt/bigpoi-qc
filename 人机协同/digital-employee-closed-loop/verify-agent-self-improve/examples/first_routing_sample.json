@@ -1,0 +1,8 @@
+{
+  "sample_id": "S-001",
+  "first_routing_target": "verify_agent",
+  "first_routing_reason": "核实内容或动作存在问题。",
+  "matched_rules": ["verify_issue_by_verify_flags"],
+  "confidence": 0.88,
+  "structured_signals": {}
+}

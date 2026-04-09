@@ -1,0 +1,59 @@
+rules:
+  - id: qc_issue_by_intercept_and_tag
+    priority: 80
+    target: qc_agent
+    confidence: 0.9
+    reason: 质检拦截错误且命中质检拦截策略问题。
+    conditions:
+      all:
+        - field_equals: {field: qc_intercept_is_correct, value: 0}
+        - tags_include_any:
+            field: judgment_dimension_tags
+            values: ["qc_intercept_rule_problem"]
+
+  - id: verify_issue_by_verify_flags_and_dimension
+    priority: 75
+    target: verify_agent
+    confidence: 0.88
+    reason: 核实内容或动作存在问题，且命中核实维度标签。
+    conditions:
+      all:
+        - any:
+            - field_equals: {field: verify_content_is_correct, value: 0}
+            - field_equals: {field: verify_action_is_correct, value: 0}
+        - tags_include_any:
+            field: judgment_dimension_tags
+            values:
+              - name_judgment_problem
+              - address_judgment_problem
+              - type_judgment_problem
+              - location_judgment_problem
+              - admin_judgement_problem
+              - evidence_usage_problem
+              - manual_escalation_strategy_problem
+
+  - id: verify_issue_by_verify_flags
+    priority: 70
+    target: verify_agent
+    confidence: 0.8
+    reason: 核实内容或动作存在问题。
+    conditions:
+      any:
+        - field_equals: {field: verify_content_is_correct, value: 0}
+        - field_equals: {field: verify_action_is_correct, value: 0}
+
+  - id: qc_issue_by_intercept_flag
+    priority: 65
+    target: qc_agent
+    confidence: 0.8
+    reason: 质检拦截判断存在问题。
+    conditions:
+      field_equals: {field: qc_intercept_is_correct, value: 0}
+
+  - id: fallback_both
+    priority: 1
+    target: both
+    confidence: 0.6
+    reason: 当前规则未形成单边结论，默认双路由。
+    conditions:
+      always_true: true

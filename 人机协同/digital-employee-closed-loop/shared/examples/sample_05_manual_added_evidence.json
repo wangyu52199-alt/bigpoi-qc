@@ -1,0 +1,26 @@
+{
+  "sample_id": "S-005",
+  "verify_content_is_correct": 0,
+  "verify_action_is_correct": 1,
+  "qc_intercept_is_correct": 1,
+  "evidence_status": 1,
+  "issue_observation_tags": ["evidence_missing"],
+  "judgment_dimension_tags": ["type_judgment_problem"],
+  "manual_comment": "原始证据缺少业态说明，人工补充后可判定。",
+  "conflicting_evidence": "",
+  "manual_added_evidence_url": "https://example.com/evidence/poi-005",
+  "manual_added_evidence_type": "government_record",
+  "manual_added_evidence_abstract": "市场监管登记显示业态为餐饮服务",
+  "verify_result": "需人工核实",
+  "evidence_record": [
+    {
+      "source": "user_upload",
+      "evidence": "营业执照照片"
+    }
+  ],
+  "qc_status": "qualified",
+  "qc_result": {
+    "intercept": false,
+    "reason": "人工补证后通过"
+  }
+}

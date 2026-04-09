@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "qc_agent_improvement_record",
+  "type": "object",
+  "required": [
+    "sample_id",
+    "intercept_issue_type",
+    "issue_summary",
+    "evidence_risk",
+    "suspected_modules",
+    "regression_case_candidate",
+    "training_priority",
+    "structured_notes"
+  ],
+  "properties": {
+    "sample_id": {"type": "string"},
+    "intercept_issue_type": {"type": "string"},
+    "issue_summary": {"type": "string"},
+    "evidence_risk": {"type": "string", "enum": ["supported", "not_supported", "contradictory"]},
+    "suspected_modules": {"type": "array", "items": {"type": "string"}},
+    "regression_case_candidate": {"type": "object"},
+    "training_priority": {"type": "string", "enum": ["high", "medium", "low"]},
+    "structured_notes": {"type": "object"}
+  }
+}

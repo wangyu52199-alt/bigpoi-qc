@@ -1,0 +1,40 @@
+{
+  "historical_high_frequency": [
+    {
+      "sample_id": "H-001",
+      "scenario": "历史高频名称误判",
+      "expected_pass": true,
+      "actual_pass": true,
+      "risk_level": "medium",
+      "detail": {"note": "通过"}
+    },
+    {
+      "sample_id": "H-002",
+      "scenario": "历史高频证据缺失",
+      "expected_pass": true,
+      "actual_pass": false,
+      "risk_level": "low",
+      "detail": {"note": "仍失败"}
+    }
+  ],
+  "current_fix_target": [
+    {
+      "sample_id": "C-001",
+      "scenario": "本次修复目标: 质检误拦截",
+      "expected_pass": true,
+      "actual_pass": true,
+      "risk_level": "medium",
+      "detail": {"note": "修复生效"}
+    }
+  ],
+  "boundary_cases": [
+    {
+      "sample_id": "B-001",
+      "scenario": "边界样本: 证据冲突",
+      "expected_pass": true,
+      "actual_pass": true,
+      "risk_level": "high",
+      "detail": {"note": "通过"}
+    }
+  ]
+}
